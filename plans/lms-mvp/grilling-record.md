@@ -186,3 +186,55 @@
 **Options:** 1. Take a commission on course sales — 2. Org subscription (platform bills organizations) — 3. Not monetized in MVP
 **Recommended:** Option 1 (piggybacks on commerce already being built in Task 6, no new billing system needed)
 **Chosen:** Option 1, as recommended — surfaced because Task 1's pricing-model line vaguely implied "paid plans for organizations" (i.e. platform-to-org billing) but no task built any such system. Task 6 was extended with server-side commission computation on every order, and Task 1's pricing-model line was rewritten to state the commission model plainly.
+
+## Session 6 — grill-me on Task 2 (10 questions)
+
+### Q36: Local Supabase setup
+**Options:** 1. Supabase CLI local stack — 2. Shared cloud dev project — 3. Per-developer cloud project
+**Recommended:** Option 1 (offline-capable, identical semantics to production, no cross-developer data collisions)
+**Chosen:** Option 1, as recommended
+
+### Q37: Worker binary shape
+**Options:** 1. Single binary, subcommands — 2. Two separate binaries/images
+**Recommended:** Option 1 (shared config/build/CI, less complexity for MVP)
+**Chosen:** Option 1, as recommended
+
+### Q38: Reverse proxy choice
+**Options:** 1. Caddy — 2. nginx
+**Recommended:** Option 1 (Caddy — automatic HTTPS, less manual TLS config for a single VPS)
+**Chosen:** Option 2, against the recommendation: user chose nginx despite Caddy's simpler auto-TLS tradeoff
+
+### Q39: Local video/bunny.net
+**Options:** 1. Real bunny.net test/sandbox credentials — 2. Stub/mock video storage locally
+**Recommended:** Option 1 (keeps local dev behavior identical to production, avoids masking integration bugs)
+**Chosen:** Option 1, as recommended
+
+### Q40: Rate limiting ownership
+**Options:** 1. Task 2 builds generic middleware, Task 3 applies it — 2. Leave entirely to Task 3
+**Recommended:** Option 1 (reuses Task 2's Redis, avoids Task 3 building limiter infra from scratch)
+**Chosen:** Option 1, as recommended
+
+### Q41: Test coverage baseline
+**Options:** 1. Drop the hard threshold for MVP — 2. Keep 50% as a floor
+**Recommended:** Option 1 (arbitrary number with no real baseline yet; report coverage instead of gating on it)
+**Chosen:** Option 1, as recommended
+
+### Q42: Feature flags mention
+**Options:** 1. Yes, remove it — 2. Keep it as a placeholder
+**Recommended:** Option 1 (same pattern as Task 1's admin-dashboard drift — don't promise a system nothing builds)
+**Chosen:** Option 1, as recommended
+
+### Q43: Secret scanning tool
+**Options:** 1. gitleaks — 2. truffleHog
+**Recommended:** Option 1 (simpler CI integration, no API key needed)
+**Chosen:** Option 1, as recommended
+
+### Q44: Redis durability
+**Options:** 1. Durable in production too — 2. Ephemeral is fine
+**Recommended:** Option 1 (Task 6's payment webhook jobs and email sends are queued here; losing them on restart is a real problem)
+**Chosen:** Option 1, as recommended
+
+### Q45: Signing key rotation line
+**Options:** 1. Yes, remove it — 2. Keep it, clarify meaning instead
+**Recommended:** Option 1 (no Go-side signing key exists in this architecture — Supabase Auth signs JWTs, Go only verifies)
+**Chosen:** Option 1, as recommended
