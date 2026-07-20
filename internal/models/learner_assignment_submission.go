@@ -119,6 +119,48 @@ func (r *LearnerAssignmentSubmissionRepo) ListPendingByCourse(ctx context.Contex
 	return out, rows.Err()
 }
 
+// PendingSubmissionSummary is a dashboard-only read model (Task 5 Stage
+// 8): a learner's own not-yet-graded submission, joined with just enough
+// course/lesson context to link back to it from the dashboard.
+type PendingSubmissionSummary struct {
+	SubmissionID  string
+	CourseID      string
+	CourseTitle   string
+	LessonID      string
+	LessonTitle   string
+	SubmittedAt   time.Time
+	DueDateStatus string
+}
+
+// ListPendingByLearner returns every submission a learner has made that
+// is still awaiting grading ('submitted'/'resubmitted'), oldest first,
+// across every course — powers the learner dashboard's "pending
+// submissions" section.
+func (r *LearnerAssignmentSubmissionRepo) ListPendingByLearner(ctx context.Context, q Querier, learnerID string) ([]PendingSubmissionSummary, error) {
+	rows, err := q.Query(ctx, `
+		SELECT s.id, c.id, c.title, l.id, l.title, s.submitted_at, s.due_date_status
+		FROM learner_assignment_submission s
+		JOIN blocks b ON b.id = s.assignment_block_id
+		JOIN lessons l ON l.id = b.lesson_id
+		JOIN courses c ON c.id = b.course_id
+		WHERE s.learner_id = $1 AND s.submission_status IN ('submitted', 'resubmitted')
+		ORDER BY s.submitted_at ASC`, learnerID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list pending assignment submissions by learner: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PendingSubmissionSummary
+	for rows.Next() {
+		var s PendingSubmissionSummary
+		if err := rows.Scan(&s.SubmissionID, &s.CourseID, &s.CourseTitle, &s.LessonID, &s.LessonTitle, &s.SubmittedAt, &s.DueDateStatus); err != nil {
+			return nil, fmt.Errorf("models: scan pending assignment submission summary: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // SetStatus is used once a grade is recorded, moving the submission from
 // 'submitted'/'resubmitted' to 'graded'.
 func (r *LearnerAssignmentSubmissionRepo) SetStatus(ctx context.Context, q Querier, id, status string) (*LearnerAssignmentSubmission, error) {

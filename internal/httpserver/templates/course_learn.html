@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{.Course.Title}}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    .progress { background: #eee; border-radius: 6px; height: 12px; overflow: hidden; margin: 0.5rem 0; }
+    .progress .bar { background: #2b7; height: 100%; }
+    .chapter { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .lesson-list { list-style: none; padding: 0; }
+    .lesson-list li { padding: 0.4rem 0; }
+    .done { color: #2b7; font-weight: bold; margin-left: 0.5rem; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>{{.Course.Title}} <small>({{.Course.Status}})</small></h1>
+  <p>{{.Course.Description}}</p>
+
+  {{if .HasAccess}}
+    <div class="progress"><div class="bar" style="width:{{.Percentage}}%"></div></div>
+    <p>{{.CompletedCount}} / {{.TotalCount}} lessons complete</p>
+    {{if .StartLessonID}}
+    <a href="/courses/{{.Course.ID}}/learn/lessons/{{.StartLessonID}}">
+      <button type="button">{{if .Enrolled}}Resume Learning{{else}}Start Course{{end}}</button>
+    </a>
+    {{end}}
+  {{else}}
+    <button type="button" id="enroll-btn" onclick="enrollInCourse()">Enroll</button>
+    <p id="enroll-error" style="color:#c33"></p>
+    <script>
+      async function enrollInCourse() {
+        var errEl = document.getElementById("enroll-error");
+        errEl.textContent = "";
+        var res = await fetch("/api/courses/{{.Course.ID}}/enroll", { method: "POST", credentials: "same-origin" });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          var data = await res.json().catch(function () { return {}; });
+          errEl.textContent = data.error || "Enrollment failed.";
+        }
+      }
+    </script>
+  {{end}}
+
+  <h2>Chapters</h2>
+  {{range .Chapters}}
+  <div class="chapter">
+    <h3>{{.Title}}</h3>
+    <ul class="lesson-list">
+      {{range .Lessons}}
+      <li>
+        {{if $.HasAccess}}<a href="/courses/{{$.Course.ID}}/learn/lessons/{{.ID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}
+        {{if .Completed}}<span class="done">&#10003; Done</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+</body>
+</html>

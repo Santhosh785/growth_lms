@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>My Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    section { margin-bottom: 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
+    .progress { background: #eee; border-radius: 6px; height: 10px; overflow: hidden; margin: 0.4rem 0; }
+    .progress .bar { background: #2b7; height: 100%; }
+    .empty { color: #777; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard</h1>
+  <p class="empty">Signed in as {{.Email}}</p>
+
+  <section>
+    <h2>Continue Learning</h2>
+    {{if .Courses}}
+      {{range .Courses}}
+      <div class="card">
+        <strong>{{.Title}}</strong> <small>({{.AccessStatus}})</small>
+        <div class="progress"><div class="bar" style="width:{{.Percentage}}%"></div></div>
+        <p>{{.CompletedCount}} / {{.TotalCount}} lessons complete</p>
+        <a href="/courses/{{.CourseID}}/learn"><button type="button">Continue</button></a>
+      </div>
+      {{end}}
+    {{else}}
+      <p class="empty">You haven't enrolled in any courses yet.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Certificates</h2>
+    {{if .Certificates}}
+      {{range .Certificates}}
+      <div class="card">
+        <strong>{{.CourseTitle}}</strong> — issued {{.IssuedAt.Format "January 2, 2006"}}
+        <p>
+          <a href="{{.VerifyURL}}" target="_blank" rel="noopener">Verify</a>
+          {{if .DownloadURL}} | <a href="{{.DownloadURL}}" target="_blank" rel="noopener">Download PDF</a>{{end}}
+        </p>
+      </div>
+      {{end}}
+    {{else}}
+      <p class="empty">No certificates earned yet.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Pending Submissions</h2>
+    {{if .PendingSubmissions}}
+      {{range .PendingSubmissions}}
+      <div class="card">
+        <strong>{{.CourseTitle}}</strong> — {{.LessonTitle}}
+        <p>Submitted {{.SubmittedAt.Format "January 2, 2006"}} ({{.DueDateStatus}}) — awaiting grading</p>
+      </div>
+      {{end}}
+    {{else}}
+      <p class="empty">Nothing awaiting grading.</p>
+    {{end}}
+  </section>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Certificate Verification</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 4rem auto; padding: 0 1rem; text-align: center; }
+    .badge { font-size: 3rem; }
+    .valid { color: #2b7; }
+    .invalid { color: #c33; }
+  </style>
+</head>
+<body>
+  {{if .Found}}
+    <p class="badge valid">&#10003;</p>
+    <h1>Certificate Verified</h1>
+    <p><strong>{{if .LearnerName}}{{.LearnerName}}{{else}}(name not provided){{end}}</strong></p>
+    <p>completed <strong>{{.CourseTitle}}</strong></p>
+    <p>Issued {{.IssuedAt.Format "January 2, 2006"}}</p>
+    <p><small>Certificate ID: {{.CertificateID}}</small></p>
+  {{else}}
+    <p class="badge invalid">&#10007;</p>
+    <h1>Certificate Not Found</h1>
+    <p>No certificate matches ID <code>{{.CertificateID}}</code>.</p>
+  {{end}}
+</body>
+</html>

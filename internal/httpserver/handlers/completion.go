@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"growth-lms/internal/httpserver/middleware"
+	"growth-lms/internal/httpserver/templates"
 	"growth-lms/internal/models"
 	"growth-lms/internal/worker"
 )
@@ -222,10 +224,20 @@ func ListCertificates(d *AuthDeps) gin.HandlerFunc {
 // function's own RETURNS TABLE signature is what limits the response to
 // learner_name/course_title/issued_at, nothing else about the
 // certificate or its owner ever leaks.
+//
+// Task 5 Stage 8: content-negotiates on the Accept header — a browser
+// navigating here (Accept: text/html,...) gets the HTML verification
+// page; anything else (no Accept header, or an explicit
+// application/json, matching every existing JSON caller of this same
+// route) gets the original JSON body unchanged. This is the same logical
+// resource rendered two ways rather than a second route, per this
+// stage's task description; the JSON shape/status codes below are
+// byte-for-byte what Stage 6 already shipped.
 func VerifyCertificate(d *AuthDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		certificateID := c.Param("certificateId")
 		ctx := c.Request.Context()
+		wantsHTML := strings.Contains(c.GetHeader("Accept"), "text/html")
 
 		// learner_name comes from profiles.full_name, which is nullable
 		// (a learner may never have set one) — scan into a pointer so a
@@ -236,10 +248,28 @@ func VerifyCertificate(d *AuthDeps) gin.HandlerFunc {
 		err := d.Pool.QueryRow(ctx, `SELECT * FROM verify_certificate($1)`, certificateID).Scan(&learnerName, &courseTitle, &issuedAt)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
+				if wantsHTML {
+					c.Header("Content-Type", "text/html; charset=utf-8")
+					c.Status(http.StatusNotFound)
+					_ = templates.CertificateVerify.Execute(c.Writer, gin.H{"Found": false, "CertificateID": certificateID})
+					return
+				}
 				c.JSON(http.StatusNotFound, gin.H{"error": "certificate not found"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+
+		if wantsHTML {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = templates.CertificateVerify.Execute(c.Writer, gin.H{
+				"Found":         true,
+				"CertificateID": certificateID,
+				"LearnerName":   learnerName,
+				"CourseTitle":   courseTitle,
+				"IssuedAt":      issuedAt,
+			})
 			return
 		}
 

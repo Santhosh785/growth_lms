@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{.Lesson.Title}} — {{.Course.Title}}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    .block { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    video, img { max-width: 100%; }
+    .nav { display: flex; justify-content: space-between; margin-top: 1.5rem; }
+    .question { margin-bottom: 0.75rem; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <p><a href="/courses/{{.Course.ID}}/learn">&larr; Back to course</a></p>
+  <h1>{{.Lesson.Title}}</h1>
+
+  {{range .Blocks}}
+  <div class="block">
+    {{if eq .Type "text"}}
+      <div>{{.TextHTML}}</div>
+    {{else if eq .Type "image"}}
+      <img src="{{.ImageURL}}" alt="{{.AltText}}">
+    {{else if eq .Type "video"}}
+      <video id="video-{{.ID}}" controls src="{{.VideoURL}}"></video>
+      <script>
+        (function () {
+          var v = document.getElementById("video-{{.ID}}");
+          var lastReported = -1;
+          function reportProgress() {
+            if (!v.duration || isNaN(v.duration)) return;
+            var pct = (v.currentTime / v.duration) * 100;
+            if (Math.abs(pct - lastReported) < 1) return;
+            lastReported = pct;
+            fetch("/api/courses/{{$.Course.ID}}/lessons/{{$.Lesson.ID}}/progress", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                watched_duration_ms: Math.round(v.currentTime * 1000),
+                watch_percentage: pct
+              })
+            });
+          }
+          v.addEventListener("timeupdate", reportProgress);
+          v.addEventListener("pause", reportProgress);
+          v.addEventListener("ended", reportProgress);
+        })();
+      </script>
+    {{else if eq .Type "file"}}
+      <a href="{{.FileURL}}" target="_blank" rel="noopener">Download {{.Filename}}</a>
+    {{else if eq .Type "quiz"}}
+      <form id="quiz-{{.ID}}" onsubmit="return submitQuiz(event, '{{.ID}}')">
+        {{$blockID := .ID}}
+        {{range .Questions}}
+        <div class="question">
+          <p>{{.Question}}</p>
+          {{$questionID := .ID}}
+          {{range $i, $answer := .Answers}}
+          <label><input type="radio" name="q-{{$blockID}}-{{$questionID}}" value="{{$i}}"> {{$answer}}</label><br>
+          {{end}}
+        </div>
+        {{end}}
+        <button type="submit">Submit Quiz</button>
+      </form>
+      <p id="quiz-result-{{.ID}}"></p>
+      <script>
+        async function submitQuiz(ev, blockId) {
+          ev.preventDefault();
+          var form = document.getElementById("quiz-" + blockId);
+          var answers = [];
+          var checked = form.querySelectorAll("input[type=radio]:checked");
+          checked.forEach(function (input) {
+            var prefix = "q-" + blockId + "-";
+            answers.push({ question_id: input.name.substring(prefix.length), answer_index: parseInt(input.value, 10) });
+          });
+          var out = document.getElementById("quiz-result-" + blockId);
+          var res = await fetch("/api/courses/{{$.Course.ID}}/lessons/{{$.Lesson.ID}}/blocks/" + blockId + "/quiz/submit", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answers: answers })
+          });
+          var data = await res.json().catch(function () { return {}; });
+          if (res.ok) {
+            out.textContent = "Score: " + Math.round(data.percentage) + "% — " + (data.passed ? "Passed" : "Not passed yet");
+          } else {
+            out.textContent = data.error || "Error submitting quiz.";
+          }
+          return false;
+        }
+      </script>
+    {{else if eq .Type "assignment"}}
+      <p>{{.AssignmentInstructions}}</p>
+      <input type="file" id="file-{{.ID}}">
+      <button type="button" onclick="submitAssignment('{{.ID}}')">Submit assignment</button>
+      <p id="assignment-result-{{.ID}}"></p>
+      <script>
+        async function submitAssignment(blockId) {
+          var out = document.getElementById("assignment-result-" + blockId);
+          var fileInput = document.getElementById("file-" + blockId);
+          if (!fileInput.files.length) { out.textContent = "Choose a file first."; return; }
+          var file = fileInput.files[0];
+          out.textContent = "Uploading...";
+          var uploadRes = await fetch("/api/courses/{{$.Course.ID}}/lessons/{{$.Lesson.ID}}/blocks/" + blockId + "/assignment/upload", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: file.name })
+          });
+          if (!uploadRes.ok) { out.textContent = "Failed to start upload."; return; }
+          var uploadData = await uploadRes.json();
+          var putRes = await fetch(uploadData.upload_url, { method: "PUT", body: file });
+          if (!putRes.ok) { out.textContent = "Upload failed."; return; }
+          var submitRes = await fetch("/api/courses/{{$.Course.ID}}/lessons/{{$.Lesson.ID}}/blocks/" + blockId + "/assignment/submit", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ storage_key: uploadData.storage_key })
+          });
+          out.textContent = submitRes.ok ? "Submitted!" : "Submission failed.";
+        }
+      </script>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .AutoComplete}}
+  <script>
+    fetch("/api/courses/{{.Course.ID}}/lessons/{{.Lesson.ID}}/complete", { method: "POST", credentials: "same-origin" });
+  </script>
+  {{end}}
+
+  <div class="nav">
+    <div>{{if .PrevLessonID}}<a href="/courses/{{.Course.ID}}/learn/lessons/{{.PrevLessonID}}"><button type="button">&larr; Previous</button></a>{{end}}</div>
+    <div>{{if .NextLessonID}}<a href="/courses/{{.Course.ID}}/learn/lessons/{{.NextLessonID}}"><button type="button">Next &rarr;</button></a>{{end}}</div>
+  </div>
+</body>
+</html>

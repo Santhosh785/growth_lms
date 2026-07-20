@@ -116,12 +116,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerOrgRoutes(engine, deps, db)
 	registerCourseRoutes(engine, deps, db)
 	registerLearnerRoutes(engine, deps, db)
+	registerLearnerUIRoutes(engine, deps, db)
 
 	// PUBLIC, unauthenticated certificate verification (Task 5 Stage 6):
 	// mounted directly on the engine, no Authenticate/WithRequestTx at
 	// all — see handlers.VerifyCertificate's doc comment for why this is
 	// safe (a SECURITY DEFINER function hard-limits what can ever be
 	// returned, not RLS session context this request doesn't have).
+	// Stage 8: this single route now content-negotiates HTML vs JSON on
+	// the Accept header (see the handler's doc comment) rather than
+	// being split into two routes.
 	engine.GET("/certificates/verify/:certificateId", handlers.VerifyCertificate(deps))
 
 	return engine
@@ -370,6 +374,41 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	// Task 5 Stage 7: reading announcements is learner-facing (creation is
 	// authoring-gated, see registerCourseRoutes).
 	course.GET("/announcements", entitled, handlers.ListAnnouncements(d))
+}
+
+// registerLearnerUIRoutes mounts Task 5 Stage 8's lightweight
+// server-rendered learner-facing pages: cookie-authenticated (same
+// session cookie as the course-editor UI, via Authenticate accepting
+// either a bearer header or the lms_session cookie), reusing
+// ResolveCourseOrg/RequireEntitlement exactly as registerLearnerRoutes'
+// JSON routes do. No CSRF middleware here: unlike the course-editor UI,
+// none of these pages POST/PATCH/DELETE directly — every mutation is a
+// small inline fetch() call to the existing JSON API (registerLearnerRoutes/
+// registerCourseRoutes), which itself carries no CSRF protection (see
+// middleware/csrf.go's doc comment), so there is nothing for these GET-only
+// page routes to protect.
+func registerLearnerUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	// No course in the path to resolve org context from — every table
+	// this page queries is scoped by learner_id = app_current_user_id()
+	// at the RLS layer (see handlers.LearnerDashboardPage's doc comment),
+	// matching ListCertificates' own precedent.
+	authed.GET("/dashboard", handlers.LearnerDashboardPage(d))
+
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+
+	// Deliberately NOT RequireEntitlement: a non-enrolled org member must
+	// still be able to load the landing page to see an Enroll button.
+	course.GET("/learn", handlers.CourseLearnPage(d))
+
+	entitled := middleware.RequireEntitlement(d.LearnerCourseAccess)
+	course.GET("/learn/lessons/:lessonId", entitled, handlers.LessonPlayerPage(d))
+
+	course.GET("/submissions", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.CourseSubmissionsPage(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

@@ -96,6 +96,41 @@ func (r *LearnerCourseAccessRepo) ListActiveLearnerIDsByCourse(ctx context.Conte
 	return out, rows.Err()
 }
 
+// ListByLearner returns every access row a learner holds (any status),
+// most-recently-enrolled first — used by the learner dashboard's
+// continue-learning list (Task 5 Stage 8). Unlike
+// ListActiveLearnerIDsByCourse this is not status-filtered: the dashboard
+// itself decides how to render a revoked/expired entry.
+func (r *LearnerCourseAccessRepo) ListByLearner(ctx context.Context, q Querier, learnerID string) ([]*LearnerCourseAccess, error) {
+	rows, err := q.Query(ctx, `
+		SELECT `+learnerCourseAccessColumns+` FROM learner_course_access
+		WHERE learner_id = $1
+		ORDER BY enrolled_at DESC
+	`, learnerID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list learner course access by learner: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*LearnerCourseAccess
+	for rows.Next() {
+		a, err := scanLearnerCourseAccessRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func scanLearnerCourseAccessRows(rows pgx.Rows) (*LearnerCourseAccess, error) {
+	var a LearnerCourseAccess
+	if err := rows.Scan(&a.ID, &a.OrgID, &a.LearnerID, &a.CourseID, &a.EntitlementID, &a.EnrolledAt, &a.AccessStatus); err != nil {
+		return nil, fmt.Errorf("models: scan learner course access: %w", err)
+	}
+	return &a, nil
+}
+
 func scanLearnerCourseAccess(row pgx.Row) (*LearnerCourseAccess, error) {
 	var a LearnerCourseAccess
 	if err := row.Scan(&a.ID, &a.OrgID, &a.LearnerID, &a.CourseID, &a.EntitlementID, &a.EnrolledAt, &a.AccessStatus); err != nil {
