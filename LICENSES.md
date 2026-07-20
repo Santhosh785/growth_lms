@@ -4,7 +4,19 @@ This document tracks the licenses of third-party dependencies used inside the Gr
 
 ## Go dependencies
 
-None yet — this section will be populated from `go.mod`/`go.sum` as Task 2 and later tasks add dependencies.
+Direct dependencies introduced in Task 2 (infrastructure scaffolding); transitive dependencies are pulled in automatically and tracked in `go.sum`.
+
+| Package | Purpose | License |
+|---|---|---|
+| [gin-gonic/gin](https://github.com/gin-gonic/gin) | HTTP router/framework | MIT |
+| [gin-contrib/cors](https://github.com/gin-contrib/cors) | CORS middleware for Gin | MIT |
+| [google/uuid](https://github.com/google/uuid) | Request ID generation | BSD-3-Clause |
+| [hibiken/asynq](https://github.com/hibiken/asynq) | Redis-backed background job queue | MIT |
+| [jackc/pgx](https://github.com/jackc/pgx) | Postgres driver/connection pool | MIT |
+| [joho/godotenv](https://github.com/joho/godotenv) | `.env` file loading | MIT |
+| [redis/go-redis](https://github.com/redis/go-redis) | Redis client | BSD-2-Clause |
+
+All licenses above are pre-approved under the license policy below (MIT/BSD).
 
 ## Node/npm dependencies (if any frontend build tooling is used)
 

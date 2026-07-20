@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Check gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$out"
+            exit 1
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # internal/testutil migrates and connects to this database for the
+      # Task 3 real-RLS integration test suite (internal/models,
+      # internal/httpserver). Tests that need it skip cleanly when it's
+      # unset, but CI always sets it so tenant-isolation is verified on
+      # every push, not only when a developer happens to have Postgres
+      # running locally.
+      LMS_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Stub Supabase's auth.users table
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email TEXT
+          );
+          SQL
+        # This bare Postgres service container has no Supabase Auth
+        # schema — only a real Supabase project (local CLI stack or
+        # hosted) provides auth.users for real. This stub exists purely
+        # so migration 000002's FK/trigger on auth.users has something to
+        # attach to in CI; it is not a substitute for testing against
+        # real Supabase Auth.
+      - name: Run unit tests with race detector
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Report coverage
+        run: go tool cover -func=coverage.out | tail -n 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install golang-migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/latest/download/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/migrate
+      - name: Stub Supabase's auth.users table
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email TEXT
+          );
+          SQL
+      - name: Run migrations against ephemeral CI Postgres
+        run: |
+          migrate -path db/migrations \
+            -database "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" \
+            up
+        # This ephemeral Postgres service container is a CI-only convenience
+        # to validate SQL syntax; local development always uses the
+        # Supabase CLI stack, never a bare Postgres container.
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [development, production]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.target }} image
+        run: docker build --target ${{ matrix.target }} -t growth-lms:${{ matrix.target }} .

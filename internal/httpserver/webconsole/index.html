@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Growth LMS — API Test Console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --panel: #ffffff; --border: #e1e4e8; --text: #1a1d21;
+    --muted: #6b7280; --accent: #2563eb; --accent-fg: #ffffff;
+    --ok: #16a34a; --err: #dc2626; --code-bg: #0f172a; --code-fg: #d1e6ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --panel: #171a21; --border: #2a2e37; --text: #e7e9ee;
+      --muted: #9aa2af; --code-bg: #0b0d12; --code-fg: #cfe3ff; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.4;
+  }
+  header {
+    padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+  }
+  header h1 { font-size: 1.05rem; margin: 0; }
+  header .sub { color: var(--muted); font-size: .8rem; }
+  #session-badge {
+    font-size: .8rem; padding: .3rem .6rem; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--bg);
+  }
+  #session-badge.in { border-color: var(--ok); color: var(--ok); }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; padding: 1rem; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+  .panel h2 { font-size: .95rem; margin: 0 0 .75rem; display: flex; align-items: center; gap: .4rem; }
+  .panel h2 .badge { font-size: .65rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: .05rem .35rem; }
+  form { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .6rem; }
+  form.inline { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  label { font-size: .75rem; color: var(--muted); }
+  input, select {
+    width: 100%; padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font-size: .85rem;
+  }
+  .row { display: flex; gap: .5rem; }
+  .row > * { flex: 1; }
+  button {
+    padding: .45rem .75rem; border: none; border-radius: 6px; background: var(--accent); color: var(--accent-fg);
+    font-size: .8rem; font-weight: 600; cursor: pointer; align-self: flex-start;
+  }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button:hover { filter: brightness(1.08); }
+  button:active { filter: brightness(0.95); }
+  hr { border: none; border-top: 1px solid var(--border); margin: .75rem 0; }
+  .hint { font-size: .72rem; color: var(--muted); margin: -.2rem 0 .3rem; }
+  #log-panel { grid-column: 1 / -1; }
+  #log { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: .4rem; }
+  .entry { background: var(--code-bg); color: var(--code-fg); border-radius: 8px; padding: .55rem .7rem; font-size: .78rem; }
+  .entry .meta { display: flex; gap: .5rem; align-items: center; margin-bottom: .3rem; font-family: ui-monospace, monospace; }
+  .entry .status { font-weight: 700; }
+  .entry .status.ok2 { color: #4ade80; }
+  .entry .status.ok4 { color: #fbbf24; }
+  .entry .status.ok5 { color: #f87171; }
+  .entry pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; }
+  .quick-fill { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .5rem; }
+  .quick-fill button { font-weight: 500; }
+  code.inline { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: .05rem .3rem; font-size: .75rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Growth LMS — API Test Console</h1>
+    <div class="sub">Hits the live JSON API on this same origin (cookies flow automatically). Not part of the product UI.</div>
+  </div>
+  <div id="session-badge">not logged in</div>
+</header>
+
+<main>
+
+  <section class="panel">
+    <h2>Account <span class="badge">/api/auth/*</span></h2>
+    <div class="quick-fill">
+      <button type="button" class="secondary" data-fill-random>Fill random test email</button>
+    </div>
+    <form id="f-register">
+      <div class="row">
+        <div><label>Email</label><input name="email" type="email" required placeholder="you@example.com"></div>
+        <div><label>Password</label><input name="password" type="password" required placeholder="min 8 chars" value="CorrectHorseBattery9!"></div>
+      </div>
+      <button type="submit">Register</button>
+    </form>
+    <div class="hint">If the local Supabase instance has confirmations enabled, check Mailpit (usually http://127.0.0.1:54324) for the verification link. Local dev defaults to auto-confirmed.</div>
+    <hr>
+    <form id="f-login">
+      <div class="row">
+        <div><label>Email</label><input name="email" type="email" required></div>
+        <div><label>Password</label><input name="password" type="password" required></div>
+      </div>
+      <button type="submit">Login</button>
+    </form>
+    <hr>
+    <form id="f-logout" class="inline">
+      <button type="submit">Logout</button>
+      <button type="button" class="secondary" id="btn-delete-account">Delete account</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Organization <span class="badge">/api/orgs</span></h2>
+    <form id="f-create-org">
+      <div class="row">
+        <div><label>Name</label><input name="name" required placeholder="Acme Academy"></div>
+        <div><label>Slug</label><input name="slug" required placeholder="acme-academy" pattern="[a-z0-9-]+"></div>
+      </div>
+      <button type="submit">Create org (you become owner)</button>
+    </form>
+    <hr>
+    <label>Active org slug (used by every panel below)</label>
+    <input id="active-org" placeholder="acme-academy">
+    <div class="quick-fill">
+      <button type="button" class="secondary" id="btn-get-org">Get org</button>
+      <button type="button" class="secondary" id="btn-list-members">List members</button>
+    </div>
+    <form id="f-update-org" class="inline">
+      <input name="name" placeholder="new org name" style="width:auto;flex:1">
+      <button type="submit" class="secondary">Rename</button>
+      <button type="button" id="btn-delete-org" class="secondary">Delete org</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Members <span class="badge">/api/orgs/:slug/members</span></h2>
+    <form id="f-change-role">
+      <label>Target user id</label>
+      <input name="user_id" placeholder="uuid" required>
+      <label>New role</label>
+      <select name="role">
+        <option value="owner">owner</option>
+        <option value="teacher">teacher</option>
+        <option value="moderator">moderator</option>
+        <option value="learner" selected>learner</option>
+      </select>
+      <div class="row">
+        <button type="submit">Change role</button>
+        <button type="button" class="secondary" id="btn-remove-member">Remove member</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Invitations <span class="badge">/api/orgs/:slug/invitations</span></h2>
+    <form id="f-invite">
+      <div class="row">
+        <div><label>Email</label><input name="email" type="email" required></div>
+        <div><label>Role</label>
+          <select name="role">
+            <option value="teacher">teacher</option>
+            <option value="moderator">moderator</option>
+            <option value="learner" selected>learner</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit">Create invitation</button>
+    </form>
+    <div class="quick-fill">
+      <button type="button" class="secondary" id="btn-list-invites">List pending invitations</button>
+    </div>
+    <hr>
+    <form id="f-invite-token" class="inline">
+      <input name="token" placeholder="invitation token" style="flex:1">
+      <button type="submit" data-action="accept">Accept</button>
+      <button type="submit" data-action="decline" class="secondary">Decline</button>
+      <button type="button" data-action="revoke" class="secondary" id="btn-revoke-invite">Revoke</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>API tokens <span class="badge">/api/orgs/:slug/api-tokens</span></h2>
+    <form id="f-create-token" class="inline">
+      <input name="name" placeholder="token name" style="flex:1" required>
+      <button type="submit">Create</button>
+    </form>
+    <div class="quick-fill">
+      <button type="button" class="secondary" id="btn-list-tokens">List tokens</button>
+    </div>
+    <form id="f-revoke-token" class="inline">
+      <input name="token_id" placeholder="token id" style="flex:1">
+      <button type="submit" class="secondary">Revoke</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Health <span class="badge">/healthz · /readyz</span></h2>
+    <div class="quick-fill">
+      <button type="button" class="secondary" id="btn-healthz">GET /healthz</button>
+      <button type="button" class="secondary" id="btn-readyz">GET /readyz</button>
+    </div>
+    <div class="hint">Every response below is also logged with status + body in the log panel.</div>
+  </section>
+
+  <section class="panel" id="log-panel">
+    <h2>Request log <button type="button" class="secondary" id="btn-clear-log" style="margin-left:auto;font-size:.7rem;padding:.2rem .5rem;">clear</button></h2>
+    <div id="log"></div>
+  </section>
+
+</main>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const logEl = $('#log');
+const badge = $('#session-badge');
+const activeOrgInput = $('#active-org');
+
+function setSession(user) {
+  if (user) {
+    badge.textContent = 'logged in: ' + user.email;
+    badge.classList.add('in');
+  } else {
+    badge.textContent = 'not logged in';
+    badge.classList.remove('in');
+  }
+}
+
+function statusClass(status) {
+  if (status >= 200 && status < 300) return 'ok2';
+  if (status >= 400 && status < 500) return 'ok4';
+  return 'ok5';
+}
+
+async function call(method, path, body) {
+  const opts = { method, headers: {}, credentials: 'same-origin' };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  let status = 0, text = '', json = null, err = null;
+  try {
+    const res = await fetch(path, opts);
+    status = res.status;
+    text = await res.text();
+    try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
+  } catch (e) {
+    err = e.message;
+  }
+
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'status ' + (err ? 'ok5' : statusClass(status));
+  statusSpan.textContent = err ? 'ERR' : status;
+  meta.appendChild(statusSpan);
+  const pathSpan = document.createElement('span');
+  pathSpan.textContent = method + ' ' + path;
+  meta.appendChild(pathSpan);
+  const time = document.createElement('span');
+  time.style.marginLeft = 'auto';
+  time.style.color = '#94a3b8';
+  time.textContent = new Date().toLocaleTimeString();
+  meta.appendChild(time);
+  entry.appendChild(meta);
+  const pre = document.createElement('pre');
+  pre.textContent = err ? ('network error: ' + err) : (json ? JSON.stringify(json, null, 2) : text || '(empty body)');
+  entry.appendChild(pre);
+  logEl.appendChild(entry);
+  logEl.scrollTop = 0;
+
+  if (path === '/api/auth/login' || path === '/api/auth/register' || path === '/api/auth/verify-email') {
+    if (json && json.user) setSession(json.user);
+  }
+  if (path === '/api/auth/logout' || path === '/api/auth/delete-account') {
+    if (!err && status < 400) setSession(null);
+  }
+
+  return { status, json, err };
+}
+
+function orgPath(suffix) {
+  const slug = activeOrgInput.value.trim();
+  return '/api/orgs/' + encodeURIComponent(slug) + suffix;
+}
+
+function formData(form) {
+  const data = {};
+  new FormData(form).forEach((v, k) => { if (v !== '') data[k] = v; });
+  return data;
+}
+
+$('[data-fill-random]').addEventListener('click', () => {
+  const stamp = Date.now();
+  const f = $('#f-register');
+  f.email.value = 'tester+' + stamp + '@example.com';
+  $('#f-login').email.value = f.email.value;
+  $('#f-login').password.value = f.password.value;
+});
+
+$('#f-register').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('POST', '/api/auth/register', formData(e.target));
+});
+
+$('#f-login').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('POST', '/api/auth/login', formData(e.target));
+});
+
+$('#f-logout').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('POST', '/api/auth/logout');
+});
+
+$('#btn-delete-account').addEventListener('click', async () => {
+  if (!confirm('Permanently delete the logged-in account?')) return;
+  await call('DELETE', '/api/auth/delete-account');
+});
+
+$('#f-create-org').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = formData(e.target);
+  const { json, status } = await call('POST', '/api/orgs', data);
+  if (status < 300 && json && json.slug) activeOrgInput.value = json.slug;
+});
+
+$('#btn-get-org').addEventListener('click', () => call('GET', orgPath('')));
+$('#btn-list-members').addEventListener('click', () => call('GET', orgPath('/members')));
+$('#btn-delete-org').addEventListener('click', () => {
+  if (!confirm('Delete this organization?')) return;
+  call('DELETE', orgPath(''));
+});
+
+$('#f-update-org').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('PATCH', orgPath(''), formData(e.target));
+});
+
+$('#f-change-role').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = formData(e.target);
+  await call('PATCH', orgPath('/members/' + encodeURIComponent(data.user_id)), { role: data.role });
+});
+
+$('#btn-remove-member').addEventListener('click', () => {
+  const userId = $('#f-change-role').user_id.value.trim();
+  if (!userId) return alert('Enter a target user id first.');
+  call('DELETE', orgPath('/members/' + encodeURIComponent(userId)));
+});
+
+$('#f-invite').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('POST', orgPath('/invitations'), formData(e.target));
+});
+
+$('#btn-list-invites').addEventListener('click', () => call('GET', orgPath('/invitations')));
+
+$('#f-invite-token').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const action = e.submitter.dataset.action;
+  const token = e.target.token.value.trim();
+  if (!token) return alert('Enter an invitation token first.');
+  await call('POST', '/api/invitations/' + encodeURIComponent(token) + '/' + action);
+});
+
+$('#btn-revoke-invite').addEventListener('click', () => {
+  const token = $('#f-invite-token').token.value.trim();
+  if (!token) return alert('Revoke needs the invitation id, not the token — use the id from "List pending invitations".');
+  call('DELETE', orgPath('/invitations/' + encodeURIComponent(token)));
+});
+
+$('#f-create-token').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await call('POST', orgPath('/api-tokens'), formData(e.target));
+});
+
+$('#btn-list-tokens').addEventListener('click', () => call('GET', orgPath('/api-tokens')));
+
+$('#f-revoke-token').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = formData(e.target);
+  await call('DELETE', orgPath('/api-tokens/' + encodeURIComponent(data.token_id)));
+});
+
+$('#btn-healthz').addEventListener('click', () => call('GET', '/healthz'));
+$('#btn-readyz').addEventListener('click', () => call('GET', '/readyz'));
+$('#btn-clear-log').addEventListener('click', () => { logEl.innerHTML = ''; });
+</script>
+
+</body>
+</html>

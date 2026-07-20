@@ -1,0 +1,52 @@
+# Local development stack: API, worker, Redis, nginx.
+# Postgres/Auth/Storage come from the Supabase CLI (`supabase start`),
+# NOT from this Compose file — see docs/DEVELOPMENT.md.
+services:
+  api:
+    build:
+      context: .
+      target: development
+    env_file: .env
+    environment:
+      LMS_PORT: "8080"
+      LMS_REDIS_URL: "redis://redis:6379"
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    command: ["air", "-c", ".air.toml"]
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: .
+      target: development
+    env_file: .env
+    environment:
+      LMS_REDIS_URL: "redis://redis:6379"
+    volumes:
+      - .:/app
+    command: ["air", "-c", ".air.worker.toml"]
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  redis-data:

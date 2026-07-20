@@ -1,0 +1,48 @@
+# Production VPS deployment override. Pulls pre-built images (no source
+# mounted, no dev tooling); nginx terminates TLS using certbot-issued
+# certificates configured manually on the host (see docs/DEVELOPMENT.md).
+services:
+  api:
+    image: ${LMS_IMAGE:-growth-lms:latest}
+    build:
+      context: .
+      target: production
+    command: ["serve"]
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: ${LMS_IMAGE:-growth-lms:latest}
+    build:
+      context: .
+      target: production
+    command: ["worker"]
+    env_file: .env
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  redis-data:

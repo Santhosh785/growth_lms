@@ -6,9 +6,19 @@ Growth LMS is a hosted, multi-tenant SaaS learning platform: organizations sign 
 
 ## Development setup
 
-This project is in its foundation phase — infrastructure, tooling, and local development setup are established in Task 2 of the [MVP plan](plans/lms-mvp/main-plan.md). Detailed setup instructions will live here once that task lands (Docker Compose stack, environment variables, migrations).
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full local setup: installing the Supabase CLI, populating `.env`, running migrations, and starting the Docker Compose stack (API, worker, Redis, nginx).
 
-Planned stack: Go (Gin) backend serving both server-rendered HTML (HTMX + Tailwind CSS) and a JSON API, Supabase (Postgres + Auth), bunny.net for video, Redis-backed background jobs, Resend for email, Razorpay for payments.
+Stack: Go (Gin) backend serving both server-rendered HTML (HTMX + Tailwind CSS) and a JSON API, Supabase (Postgres + Auth), bunny.net for video, Redis-backed background jobs (asynq), Resend for email, Razorpay for payments.
+
+Quick start:
+
+```bash
+supabase start          # local Postgres/Auth/Storage
+cp .env.example .env    # fill in values printed by `supabase start` + sandbox creds
+make migrate-up
+docker compose up -d    # API, worker, Redis, nginx
+curl http://localhost:8080/healthz
+```
 
 ## Contributing
 

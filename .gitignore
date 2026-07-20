@@ -1,0 +1,23 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+/tmp/
+/bin/
+*.exe
+
+# Supabase local stack state
+/supabase/.branches
+/supabase/.temp
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local state
+.claude/
+
+# OS
+.DS_Store

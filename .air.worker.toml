@@ -1,0 +1,19 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/app-worker ./cmd/app"
+  bin = "./tmp/app-worker"
+  args_bin = ["worker"]
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor", "db/migrations"]
+  delay = 300
+
+[log]
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
