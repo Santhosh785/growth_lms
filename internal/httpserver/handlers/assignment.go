@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/models"
+	"growth-lms/internal/worker"
 )
 
 // assignmentBlockInLesson loads :blockId, verifies it belongs to the given
@@ -267,9 +269,9 @@ type gradeSubmissionRequest struct {
 // teacher entitled to grade course A can't grade-queue-probe or grade a
 // submission belonging to course B via a mismatched submissionId.
 //
-// TODO(Stage 7): enqueue an assignment-graded notification to the learner
-// here once the async notification worker exists — not implemented in
-// this stage.
+// Stage 7: after recording the grade, enqueues an assignment-graded
+// notification for the learner (enqueue-only — see the enqueue call
+// below for why a failure there doesn't fail this request).
 func GradeSubmission(d *AuthDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req gradeSubmissionRequest
@@ -312,6 +314,21 @@ func GradeSubmission(d *AuthDeps) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
+		}
+
+		// Stage 7: enqueue-only — never call Resend synchronously in the
+		// request path (spec + acceptance criterion). A failure to enqueue
+		// (e.g. Redis unreachable) is logged but does not fail the grading
+		// request; grading has already succeeded and the notification is a
+		// best-effort side effect.
+		if err := worker.EnqueueAssignmentGradedNotification(d.AsyncQueue, worker.NotifyAssignmentGradedPayload{
+			LearnerID:       submission.LearnerID,
+			CourseID:        course.ID,
+			CourseTitle:     course.Title,
+			GradePercentage: req.GradePercentage,
+			FeedbackText:    req.FeedbackText,
+		}); err != nil {
+			slog.Default().Error("handlers: failed to enqueue assignment-graded notification", "error", err, "learner_id", submission.LearnerID, "submission_id", submission.ID)
 		}
 
 		c.JSON(http.StatusCreated, assignmentSubmissionResponse(updated, grade))

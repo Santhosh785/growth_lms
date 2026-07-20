@@ -109,6 +109,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		QuizScores:            models.NewLearnerQuizScoreRepo(),
 		AssignmentSubmissions: models.NewLearnerAssignmentSubmissionRepo(),
 		AssignmentGrades:      models.NewLearnerAssignmentGradeRepo(),
+		Announcements:         models.NewCourseAnnouncementRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
@@ -259,6 +260,13 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	course.GET("/submissions", authoring, handlers.ListCourseSubmissions(d))
 	course.POST("/submissions/:submissionId/grade", authoring, handlers.GradeSubmission(d))
 
+	// Task 5 Stage 7: teacher-authored announcements. Creation is an
+	// authoring action (wired here, not registerLearnerRoutes); reading is
+	// learner-facing (wired in registerLearnerRoutes, RequireEntitlement-
+	// gated) since any enrolled learner needs to read them, not just
+	// owner/teacher.
+	course.POST("/announcements", authoring, handlers.CreateAnnouncement(d))
+
 	// Categories/collections have no course in their path — mounted under
 	// the org-slug group instead, per the noted exception above.
 	org := authed.Group("/orgs/:org_slug")
@@ -358,6 +366,10 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	// Task 5 Stage 6: the learner's own certificate for this course, if
 	// issued.
 	course.GET("/certificate", entitled, handlers.GetCourseCertificate(d))
+
+	// Task 5 Stage 7: reading announcements is learner-facing (creation is
+	// authoring-gated, see registerCourseRoutes).
+	course.GET("/announcements", entitled, handlers.ListAnnouncements(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

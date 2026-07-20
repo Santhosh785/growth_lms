@@ -53,4 +53,5 @@ type AuthDeps struct {
 	QuizScores            *models.LearnerQuizScoreRepo
 	AssignmentSubmissions *models.LearnerAssignmentSubmissionRepo
 	AssignmentGrades      *models.LearnerAssignmentGradeRepo
+	Announcements         *models.CourseAnnouncementRepo
 }

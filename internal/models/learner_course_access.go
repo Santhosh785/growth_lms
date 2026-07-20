@@ -69,6 +69,33 @@ func (r *LearnerCourseAccessRepo) SetStatus(ctx context.Context, q Querier, id, 
 	return scanLearnerCourseAccess(row)
 }
 
+// ListActiveLearnerIDsByCourse returns the learner_id of every row with
+// access_status='active' for courseID — used by the course-announcement
+// handler to fan out one course-announcement-posted notification job per
+// currently-enrolled learner. Revoked/expired access holders are
+// deliberately excluded: they no longer have a reason to hear about new
+// course content.
+func (r *LearnerCourseAccessRepo) ListActiveLearnerIDsByCourse(ctx context.Context, q Querier, courseID string) ([]string, error) {
+	rows, err := q.Query(ctx, `
+		SELECT learner_id FROM learner_course_access
+		WHERE course_id = $1 AND access_status = $2
+	`, courseID, AccessStatusActive)
+	if err != nil {
+		return nil, fmt.Errorf("models: list active learner ids by course: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var learnerID string
+		if err := rows.Scan(&learnerID); err != nil {
+			return nil, fmt.Errorf("models: scan active learner id: %w", err)
+		}
+		out = append(out, learnerID)
+	}
+	return out, rows.Err()
+}
+
 func scanLearnerCourseAccess(row pgx.Row) (*LearnerCourseAccess, error) {
 	var a LearnerCourseAccess
 	if err := row.Scan(&a.ID, &a.OrgID, &a.LearnerID, &a.CourseID, &a.EntitlementID, &a.EnrolledAt, &a.AccessStatus); err != nil {

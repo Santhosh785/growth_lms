@@ -40,6 +40,12 @@ func main() {
 		level = slog.LevelDebug
 	}
 	logger := logging.New(cfg.LogHumanFmt, level)
+	// Stage 7: handler-level best-effort notification-enqueue failures log
+	// via slog.Default() rather than threading a *slog.Logger through
+	// AuthDeps for one non-critical log line — SetDefault makes those
+	// calls actually route through the configured handler/format instead
+	// of slog's bare fallback.
+	slog.SetDefault(logger)
 	logger.Info("starting", "command", os.Args[1], "config", cfg.Redacted())
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

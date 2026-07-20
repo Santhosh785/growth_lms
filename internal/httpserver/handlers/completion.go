@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/models"
+	"growth-lms/internal/worker"
 )
 
 const certificatePDFContentType = "application/pdf"
@@ -88,8 +90,19 @@ func evaluateAndIssueCertificateIfComplete(ctx context.Context, tx models.Querie
 		return fmt.Errorf("handlers: create certificate row: %w", err)
 	}
 
-	// TODO(Stage 7): enqueue a certificate-issued notification email to
-	// the learner here once the async notification worker exists.
+	// Stage 7: enqueue-only, never call Resend synchronously in the
+	// request path (spec + acceptance criterion). A failure to enqueue
+	// (e.g. Redis unreachable) is logged but does not fail the request —
+	// the certificate itself has already been issued and stored; the
+	// notification is a best-effort side effect, not the primary action.
+	if err := worker.EnqueueCertificateIssuedNotification(d.AsyncQueue, worker.NotifyCertificateIssuedPayload{
+		LearnerID:     learnerID,
+		CourseID:      course.ID,
+		CourseTitle:   course.Title,
+		CertificateID: certificateID,
+	}); err != nil {
+		slog.Default().Error("handlers: failed to enqueue certificate-issued notification", "error", err, "learner_id", learnerID, "course_id", course.ID)
+	}
 
 	return nil
 }

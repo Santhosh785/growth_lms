@@ -25,11 +25,12 @@ type createBlockRequest struct {
 }
 
 var validBlockTypes = map[string]bool{
-	models.BlockTypeText:  true,
-	models.BlockTypeImage: true,
-	models.BlockTypeVideo: true,
-	models.BlockTypeFile:  true,
-	models.BlockTypeQuiz:  true,
+	models.BlockTypeText:       true,
+	models.BlockTypeImage:      true,
+	models.BlockTypeVideo:      true,
+	models.BlockTypeFile:       true,
+	models.BlockTypeQuiz:       true,
+	models.BlockTypeAssignment: true,
 }
 
 // sanitizeBlockContent re-marshals content with any "text" block's HTML
