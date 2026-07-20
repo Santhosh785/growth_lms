@@ -154,3 +154,44 @@ func TestCourseAuthoring_RejectsLearnerAndModerator(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, rec.Code, "%s must not upload media", role)
 	}
 }
+
+// TestCourseTransition_RejectsUndocumentedTransitions proves the status
+// state machine rejects transitions outside its documented flow (400, not
+// a silent no-op or a 500) — complementing
+// TestCourseAuthoringFlow_EndToEnd's coverage of the valid path.
+func TestCourseTransition_RejectsUndocumentedTransitions(t *testing.T) {
+	adminURL := testutil.RequireDB(t)
+	testutil.DB(t)
+	engine, dbPool := newTestEngine(t, adminURL)
+
+	ownerID := uuid.NewString()
+	seedAuthUser(t, dbPool, ownerID, "owner-transition-"+ownerID+"@example.com")
+	slug := "course-transition-" + uuid.NewString()
+	token := mintToken(t, ownerID, "owner-transition@example.com")
+	createTestOrg(t, engine, token, "Transition Org", slug)
+
+	rec := doJSON(t, engine, http.MethodPost, "/api/courses", token, map[string]string{"org_slug": slug, "title": "Transition Course"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var course map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &course))
+	courseID := course["id"].(string)
+
+	// draft -> published directly (skipping review) is not a documented
+	// transition — must be rejected, and must go through /publish anyway,
+	// not /transition.
+	rec = doJSON(t, engine, http.MethodPost, "/api/courses/"+courseID+"/transition", token, map[string]string{"status": "published"})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	// draft -> unpublished is not a documented transition either (only
+	// published -> unpublished is).
+	rec = doJSON(t, engine, http.MethodPost, "/api/courses/"+courseID+"/transition", token, map[string]string{"status": "unpublished"})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	// Confirm the course's status was never actually changed by either
+	// rejected attempt.
+	rec = doJSON(t, engine, http.MethodGet, "/api/courses/"+courseID, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var reloaded map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reloaded))
+	require.Equal(t, "draft", reloaded["status"], "rejected transitions must not mutate course status")
+}
