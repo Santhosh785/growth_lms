@@ -45,10 +45,12 @@ type AuthDeps struct {
 	AsyncQueue      *asynq.Client
 
 	// Task 5: learner journey.
-	LearnerCourseAccess *models.LearnerCourseAccessRepo
-	ResumePositions     *models.LearnerResumePositionRepo
-	LearnerProgress     *models.LearnerLessonProgressRepo
-	Certificates        *models.LearnerCertificateRepo
-	QuizAttempts        *models.LearnerQuizAttemptRepo
-	QuizScores          *models.LearnerQuizScoreRepo
+	LearnerCourseAccess   *models.LearnerCourseAccessRepo
+	ResumePositions       *models.LearnerResumePositionRepo
+	LearnerProgress       *models.LearnerLessonProgressRepo
+	Certificates          *models.LearnerCertificateRepo
+	QuizAttempts          *models.LearnerQuizAttemptRepo
+	QuizScores            *models.LearnerQuizScoreRepo
+	AssignmentSubmissions *models.LearnerAssignmentSubmissionRepo
+	AssignmentGrades      *models.LearnerAssignmentGradeRepo
 }

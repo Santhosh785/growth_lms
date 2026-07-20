@@ -82,6 +82,16 @@ type QuizBlockContent struct {
 	Questions []QuizQuestion `json:"questions"`
 }
 
+// AssignmentBlockContent is the JSONB shape for an "assignment" block
+// (grilling-record.md Q1). DueDate is optional (nil means no deadline, so
+// every submission is on_time); AllowResubmission governs whether a
+// learner may submit more than once (Task 5 Stage 5).
+type AssignmentBlockContent struct {
+	Instructions      string     `json:"instructions"`
+	DueDate           *time.Time `json:"due_date,omitempty"`
+	AllowResubmission bool       `json:"allow_resubmission"`
+}
+
 type BlockRepo struct{}
 
 func NewBlockRepo() *BlockRepo { return &BlockRepo{} }

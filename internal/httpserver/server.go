@@ -101,12 +101,14 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Storage:         media.NewStorageClient(cfg.Supabase),
 		AsyncQueue:      asyncQueue,
 
-		LearnerCourseAccess: models.NewLearnerCourseAccessRepo(),
-		ResumePositions:     models.NewLearnerResumePositionRepo(),
-		LearnerProgress:     models.NewLearnerLessonProgressRepo(),
-		Certificates:        models.NewLearnerCertificateRepo(),
-		QuizAttempts:        models.NewLearnerQuizAttemptRepo(),
-		QuizScores:          models.NewLearnerQuizScoreRepo(),
+		LearnerCourseAccess:   models.NewLearnerCourseAccessRepo(),
+		ResumePositions:       models.NewLearnerResumePositionRepo(),
+		LearnerProgress:       models.NewLearnerLessonProgressRepo(),
+		Certificates:          models.NewLearnerCertificateRepo(),
+		QuizAttempts:          models.NewLearnerQuizAttemptRepo(),
+		QuizScores:            models.NewLearnerQuizScoreRepo(),
+		AssignmentSubmissions: models.NewLearnerAssignmentSubmissionRepo(),
+		AssignmentGrades:      models.NewLearnerAssignmentGradeRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
@@ -244,6 +246,12 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	course.POST("/media/upload/:pendingId/complete", authoring, handlers.UploadFileComplete(d))
 	course.PATCH("/assets/:assetId/refresh-url", authoring, handlers.RefreshAssetURL(d))
 
+	// Task 5 Stage 5: teacher-side assignment grading, wired into this same
+	// authoring-gated course group (not registerLearnerRoutes) since
+	// grading is an authoring action, not a learner one.
+	course.GET("/submissions", authoring, handlers.ListCourseSubmissions(d))
+	course.POST("/submissions/:submissionId/grade", authoring, handlers.GradeSubmission(d))
+
 	// Categories/collections have no course in their path — mounted under
 	// the org-slug group instead, per the noted exception above.
 	org := authed.Group("/orgs/:org_slug")
@@ -328,6 +336,10 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 
 	course.GET("/lessons/:lessonId/blocks/:blockId/quiz", entitled, handlers.GetQuiz(d))
 	course.POST("/lessons/:lessonId/blocks/:blockId/quiz/submit", entitled, handlers.SubmitQuiz(d))
+
+	course.POST("/lessons/:lessonId/blocks/:blockId/assignment/upload", entitled, handlers.UploadAssignmentSubmission(d))
+	course.POST("/lessons/:lessonId/blocks/:blockId/assignment/submit", entitled, handlers.SubmitAssignment(d))
+	course.GET("/lessons/:lessonId/blocks/:blockId/assignment/submissions", entitled, handlers.GetAssignmentSubmissions(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
