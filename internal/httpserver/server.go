@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -16,8 +17,10 @@ import (
 	"growth-lms/internal/httpserver/handlers"
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/httpserver/webconsole"
+	"growth-lms/internal/media"
 	"growth-lms/internal/models"
 	"growth-lms/internal/ratelimit"
+	"growth-lms/internal/worker"
 )
 
 // New builds the Gin engine for the application: request ID and logging
@@ -62,6 +65,14 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		panic(err)
 	}
 
+	redisOpt, err := asynq.ParseRedisURI(cfg.Redis.URL)
+	if err != nil {
+		// config.Load() already validated LMS_REDIS_URL is a well-formed
+		// URL; this can only fail if it was blanked out afterward.
+		panic(err)
+	}
+	asyncQueue := worker.NewClient(redisOpt)
+
 	deps := &handlers.AuthDeps{
 		Config:      cfg,
 		Pool:        db,
@@ -74,10 +85,26 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Invitations: models.NewInvitationRepo(),
 		Audit:       models.NewAuditRepo(),
 		APITokens:   models.NewAPITokenRepo(),
+
+		Courses:         models.NewCourseRepo(),
+		Chapters:        models.NewChapterRepo(),
+		Lessons:         models.NewLessonRepo(),
+		Blocks:          models.NewBlockRepo(),
+		Assets:          models.NewAssetRepo(),
+		Categories:      models.NewCategoryRepo(),
+		Tags:            models.NewTagRepo(),
+		Collections:     models.NewCollectionRepo(),
+		CourseVersions:  models.NewCourseVersionRepo(),
+		CoursePrereqs:   models.NewCoursePrerequisiteRepo(),
+		CompletionRules: models.NewCourseCompletionRuleRepo(),
+		Bunny:           media.NewBunnyClient(cfg.BunnyNet),
+		Storage:         media.NewStorageClient(cfg.Supabase),
+		AsyncQueue:      asyncQueue,
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
 	registerOrgRoutes(engine, deps, db)
+	registerCourseRoutes(engine, deps, db)
 
 	return engine
 }
@@ -141,6 +168,99 @@ func registerOrgRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Poo
 	// context to resolve.
 	authed.POST("/invitations/:token/accept", handlers.AcceptInvitation(d))
 	authed.POST("/invitations/:token/decline", handlers.DeclineInvitation(d))
+}
+
+// registerCourseRoutes mounts Task 4's course-domain routes. Course-scoped
+// endpoints are flat (/api/courses/:courseId/...) and resolve org context
+// via ResolveCourseOrg rather than an :org_slug path segment (see
+// plans/task-4-implementation/main-plan.md's Q7). categories/collections
+// have no course to derive org context from, so they nest under
+// /api/orgs/:org_slug/... reusing the existing ResolveOrg group instead —
+// a deliberate, noted exception to the flat-path convention.
+func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	// CreateCourse/ListCourses have no :courseId in their path to derive
+	// org context from (there's no course yet / the caller specifies
+	// which org via org_slug in the request) — they resolve org and
+	// role-check internally rather than via RequireRole, see
+	// resolveOrgBySlugForCourseCreation in handlers/courses.go.
+	authed.POST("/courses", handlers.CreateCourse(d))
+	authed.GET("/courses", handlers.ListCourses(d))
+
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+
+	course.GET("", handlers.GetCourse(d))
+	course.PATCH("", authoring, handlers.UpdateCourse(d))
+	course.DELETE("", authoring, handlers.DeleteCourse(d))
+	course.POST("/transition", authoring, handlers.TransitionCourse(d))
+	course.POST("/publish", authoring, handlers.PublishCourse(d))
+	course.POST("/unpublish", authoring, handlers.UnpublishCourse(d))
+	course.POST("/duplicate", authoring, handlers.DuplicateCourse(d))
+	course.GET("/preview", authoring, handlers.PreviewCourse(d))
+
+	course.POST("/tags", authoring, handlers.AddTagToCourse(d))
+	course.DELETE("/tags/:tagId", authoring, handlers.RemoveTagFromCourse(d))
+	course.GET("/tags", handlers.ListCourseTags(d))
+
+	course.GET("/versions", handlers.ListCourseVersions(d))
+	course.GET("/versions/:versionId", handlers.GetCourseVersion(d))
+	course.POST("/versions/:versionId/restore", authoring, handlers.RestoreCourseVersion(d))
+
+	course.POST("/chapters", authoring, handlers.CreateChapter(d))
+	course.GET("/chapters", handlers.ListChapters(d))
+	course.POST("/chapters/reorder", authoring, handlers.ReorderChapters(d))
+	course.PATCH("/chapters/:chapterId", authoring, handlers.UpdateChapter(d))
+	course.DELETE("/chapters/:chapterId", authoring, handlers.DeleteChapter(d))
+
+	course.POST("/chapters/:chapterId/lessons", authoring, handlers.CreateLesson(d))
+	course.GET("/chapters/:chapterId/lessons", handlers.ListLessons(d))
+	course.POST("/chapters/:chapterId/lessons/reorder", authoring, handlers.ReorderLessons(d))
+	course.PATCH("/chapters/:chapterId/lessons/:lessonId", authoring, handlers.UpdateLesson(d))
+	course.DELETE("/chapters/:chapterId/lessons/:lessonId", authoring, handlers.DeleteLesson(d))
+
+	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks", authoring, handlers.CreateBlock(d))
+	course.GET("/chapters/:chapterId/lessons/:lessonId/blocks", handlers.ListBlocks(d))
+	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks/reorder", authoring, handlers.ReorderBlocks(d))
+	course.PATCH("/chapters/:chapterId/lessons/:lessonId/blocks/:blockId", authoring, handlers.UpdateBlock(d))
+	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks/:blockId/autosave", authoring, handlers.AutosaveBlock(d))
+	course.DELETE("/chapters/:chapterId/lessons/:lessonId/blocks/:blockId", authoring, handlers.DeleteBlock(d))
+
+	course.POST("/media/upload/video", authoring, handlers.UploadVideo(d))
+	course.POST("/media/upload", authoring, handlers.UploadFile(d))
+	course.POST("/media/upload/:pendingId/complete", authoring, handlers.UploadFileComplete(d))
+	course.PATCH("/assets/:assetId/refresh-url", handlers.RefreshAssetURL(d))
+
+	// Categories/collections have no course in their path — mounted under
+	// the org-slug group instead, per the noted exception above.
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	org.POST("/categories", middleware.RequireRole(auth.RoleOwner), handlers.CreateCategory(d))
+	org.GET("/categories", handlers.ListCategories(d))
+	org.PATCH("/categories/:categoryId", middleware.RequireRole(auth.RoleOwner), handlers.UpdateCategory(d))
+	org.DELETE("/categories/:categoryId", middleware.RequireRole(auth.RoleOwner), handlers.DeleteCategory(d))
+
+	org.POST("/collections", authoring, handlers.CreateCollection(d))
+	org.GET("/collections", handlers.ListCollections(d))
+	org.PATCH("/collections/:collectionId", authoring, handlers.UpdateCollection(d))
+	org.DELETE("/collections/:collectionId", authoring, handlers.DeleteCollection(d))
+	org.POST("/collections/:collectionId/courses", authoring, handlers.AddCourseToCollection(d))
+	org.GET("/collections/:collectionId/courses", handlers.ListCollectionCourses(d))
+	org.DELETE("/collections/:collectionId/courses/:courseId", authoring, handlers.RemoveCourseFromCollection(d))
+	org.POST("/collections/:collectionId/courses/reorder", authoring, handlers.ReorderCollectionCourses(d))
+
+	// The Bunny transcode-complete webhook has NO auth/RLS middleware at
+	// all — it's an external caller with no session, no bearer token, no
+	// org context. The handler itself verifies the HMAC signature before
+	// doing anything, matching the "verified provider webhook only" rule
+	// the spec compares to the payments-webhook precedent.
+	engine.POST("/api/webhooks/bunny", handlers.BunnyWebhook(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

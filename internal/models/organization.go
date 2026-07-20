@@ -92,3 +92,36 @@ func (r *OrgRepo) Delete(ctx context.Context, q Querier, id string) error {
 	}
 	return nil
 }
+
+// GetBunnyLibraryID returns the org's Bunny Stream library ID, or "" if
+// one hasn't been provisioned yet (spec: lazily provisioned on first
+// video upload — orgs that never upload video never provision a
+// library).
+func (r *OrgRepo) GetBunnyLibraryID(ctx context.Context, q Querier, orgID string) (string, error) {
+	var libraryID *string
+	if err := q.QueryRow(ctx, `SELECT bunny_library_id FROM organizations WHERE id = $1`, orgID).Scan(&libraryID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("models: get bunny library id: %w", err)
+	}
+	if libraryID == nil {
+		return "", nil
+	}
+	return *libraryID, nil
+}
+
+// SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
+// for an org. Only ever called once per org (the first video upload finds
+// GetBunnyLibraryID returning "" and calls this immediately after
+// media.BunnyClient.CreateLibrary succeeds).
+func (r *OrgRepo) SetBunnyLibraryID(ctx context.Context, q Querier, orgID, libraryID string) error {
+	tag, err := q.Exec(ctx, `UPDATE organizations SET bunny_library_id = $2, updated_at = now() WHERE id = $1`, orgID, libraryID)
+	if err != nil {
+		return fmt.Errorf("models: set bunny library id: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

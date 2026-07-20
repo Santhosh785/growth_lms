@@ -62,6 +62,17 @@ func (r *AssetRepo) Create(ctx context.Context, q Querier, orgID, courseID, asse
 	return scanAsset(row)
 }
 
+// CreateWithID inserts an assets row with a caller-supplied ID, used when
+// the ID must be known before the row exists (e.g. Supabase Storage
+// uploads, whose storage_key path embeds the asset ID).
+func (r *AssetRepo) CreateWithID(ctx context.Context, q Querier, id, orgID, courseID, assetType, filename, storageProvider, storageKey, createdBy, initialStatus string) (*Asset, error) {
+	row := q.QueryRow(ctx, `
+		INSERT INTO assets (id, org_id, course_id, type, filename, storage_provider, storage_key, created_by, processing_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING `+assetColumns, id, orgID, courseID, assetType, filename, storageProvider, storageKey, createdBy, initialStatus)
+	return scanAsset(row)
+}
+
 func (r *AssetRepo) Get(ctx context.Context, q Querier, id string) (*Asset, error) {
 	row := q.QueryRow(ctx, `SELECT `+assetColumns+` FROM assets WHERE id = $1`, id)
 	return scanAsset(row)
