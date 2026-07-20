@@ -29,18 +29,24 @@ type AuthDeps struct {
 	APITokens   *models.APITokenRepo
 
 	// Task 4: course domain.
-	Courses            *models.CourseRepo
-	Chapters           *models.ChapterRepo
-	Lessons            *models.LessonRepo
-	Blocks             *models.BlockRepo
-	Assets             *models.AssetRepo
-	Categories         *models.CategoryRepo
-	Tags               *models.TagRepo
-	Collections        *models.CollectionRepo
-	CourseVersions     *models.CourseVersionRepo
-	CoursePrereqs      *models.CoursePrerequisiteRepo
-	CompletionRules    *models.CourseCompletionRuleRepo
-	Bunny              media.BunnyClient
-	Storage            media.StorageClient
-	AsyncQueue         *asynq.Client
+	Courses         *models.CourseRepo
+	Chapters        *models.ChapterRepo
+	Lessons         *models.LessonRepo
+	Blocks          *models.BlockRepo
+	Assets          *models.AssetRepo
+	Categories      *models.CategoryRepo
+	Tags            *models.TagRepo
+	Collections     *models.CollectionRepo
+	CourseVersions  *models.CourseVersionRepo
+	CoursePrereqs   *models.CoursePrerequisiteRepo
+	CompletionRules *models.CourseCompletionRuleRepo
+	Bunny           media.BunnyClient
+	Storage         media.StorageClient
+	AsyncQueue      *asynq.Client
+
+	// Task 5: learner journey.
+	LearnerCourseAccess *models.LearnerCourseAccessRepo
+	ResumePositions     *models.LearnerResumePositionRepo
+	LearnerProgress     *models.LearnerLessonProgressRepo
+	Certificates        *models.LearnerCertificateRepo
 }

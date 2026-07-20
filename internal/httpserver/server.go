@@ -100,11 +100,17 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Bunny:           media.NewBunnyClient(cfg.BunnyNet),
 		Storage:         media.NewStorageClient(cfg.Supabase),
 		AsyncQueue:      asyncQueue,
+
+		LearnerCourseAccess: models.NewLearnerCourseAccessRepo(),
+		ResumePositions:     models.NewLearnerResumePositionRepo(),
+		LearnerProgress:     models.NewLearnerLessonProgressRepo(),
+		Certificates:        models.NewLearnerCertificateRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
 	registerOrgRoutes(engine, deps, db)
 	registerCourseRoutes(engine, deps, db)
+	registerLearnerRoutes(engine, deps, db)
 
 	return engine
 }
@@ -287,6 +293,36 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	editor.POST("/publish", middleware.RequireCSRF(), handlers.CourseEditorPublish(d))
 	editor.POST("/unpublish", middleware.RequireCSRF(), handlers.CourseEditorUnpublish(d))
 	editor.POST("/versions/:versionId/restore", middleware.RequireCSRF(), handlers.CourseEditorRestoreVersion(d))
+}
+
+// registerLearnerRoutes mounts Task 5's learner-journey routes, reusing the
+// same flat /api/courses/:courseId/... convention and ResolveCourseOrg
+// middleware registerCourseRoutes uses (a separate Gin route group, since
+// registerCourseRoutes' own "course" group is local to that function, but
+// the same underlying middleware and org-resolution semantics).
+//
+// Enroll is deliberately NOT gated by RequireRole or RequireEntitlement —
+// any org member may self-enroll in a published course (ResolveCourseOrg
+// itself already 404s non-members/non-platform-owners, so "any org
+// member" is exactly what reaches the handler). Every other route here
+// needs an active learner_course_access row (or owner/teacher/platform-
+// owner status), enforced by RequireEntitlement.
+func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+
+	course.POST("/enroll", handlers.EnrollCourse(d))
+
+	entitled := middleware.RequireEntitlement(d.LearnerCourseAccess)
+	course.GET("/player", entitled, handlers.GetPlayer(d))
+	course.POST("/lessons/:lessonId/resume", entitled, handlers.ResumeLesson(d))
+	course.POST("/lessons/:lessonId/progress", entitled, handlers.ReportLessonProgress(d))
+	course.POST("/lessons/:lessonId/complete", entitled, handlers.CompleteLesson(d))
+	course.GET("/progress", entitled, handlers.GetCourseProgress(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
