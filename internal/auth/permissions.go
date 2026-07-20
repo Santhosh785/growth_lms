@@ -15,15 +15,34 @@ const (
 // consulting this map at request time — it exists as a single, testable,
 // living reference for the role model that Task 4/5/6 route permissions
 // should extend rather than inventing ad hoc checks.
+// courseDomainActions are the Task 4 authoring actions granted to both
+// RoleOwner and RoleTeacher — moderator remains learner-equivalent for
+// authoring per Task 3's Q54 decision, and learners never author.
+var courseDomainActions = []string{
+	"course.create", "course.update", "course.delete", "course.publish",
+	"course.unpublish", "course.archive", "course.duplicate",
+	"chapter.create", "chapter.update", "chapter.delete",
+	"lesson.create", "lesson.update", "lesson.delete",
+	"block.create", "block.update", "block.delete",
+	"media.upload", "collection.manage", "tag.manage",
+}
+
+// ownerOnlyCourseDomainActions are curated-taxonomy actions restricted to
+// RoleOwner: categories are a small, deliberate set an org owner manages,
+// unlike tags' freeform get-or-create.
+var ownerOnlyCourseDomainActions = []string{
+	"category.create", "category.update", "category.delete",
+}
+
 var permissionMatrix = map[string][]string{
-	RoleOwner: {
+	RoleOwner: append(append([]string{
 		"org.update", "org.delete",
 		"member.invite", "member.role.change", "member.remove",
 		"apitoken.create", "apitoken.revoke",
-	},
-	RoleTeacher: {
+	}, courseDomainActions...), ownerOnlyCourseDomainActions...),
+	RoleTeacher: append([]string{
 		"member.invite",
-	},
+	}, courseDomainActions...),
 	RoleModerator: {
 		"member.invite",
 	},

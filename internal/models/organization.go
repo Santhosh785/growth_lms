@@ -33,7 +33,14 @@ func (r *OrgRepo) Create(ctx context.Context, q Querier, name, slug string) (*Or
 	// Postgres's evaluation of function-returning-composite expansion,
 	// silently double-inserting. Evaluating it once in a derived table and
 	// projecting from that avoids the re-evaluation entirely.
-	row := q.QueryRow(ctx, `SELECT (o).* FROM (SELECT create_organization($1, $2) AS o) s`, name, slug)
+	//
+	// Columns are named explicitly (not `(o).*`) so a later ALTER TABLE ...
+	// ADD COLUMN on organizations (e.g. Task 4's bunny_library_id) can't
+	// silently shift this Scan out of sync with the row shape.
+	row := q.QueryRow(ctx, `
+		SELECT (o).id, (o).slug, (o).name, (o).created_by_user_id, (o).created_at, (o).updated_at
+		FROM (SELECT create_organization($1, $2) AS o) s
+	`, name, slug)
 
 	var o Organization
 	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedByUserID, &o.CreatedAt, &o.UpdatedAt); err != nil {

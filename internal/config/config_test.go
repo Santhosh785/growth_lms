@@ -19,6 +19,7 @@ func setValidEnv(t *testing.T) {
 		"LMS_BUNNY_API_KEY":             "bunny-key",
 		"LMS_BUNNY_STORAGE_ZONE":        "lms-dev",
 		"LMS_BUNNY_CDN_URL":             "https://lms-dev.b-cdn.net",
+		"LMS_BUNNY_WEBHOOK_SECRET":      "bunny-webhook-secret",
 		"LMS_RESEND_API_KEY":            "resend-key",
 		"LMS_RAZORPAY_KEY_ID":           "rzp_test_id",
 		"LMS_RAZORPAY_KEY_SECRET":       "rzp_test_secret",
@@ -82,6 +83,16 @@ func TestLoad_InvalidEnv(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid LMS_ENV")
+	}
+}
+
+func TestLoad_MissingBunnyWebhookSecret(t *testing.T) {
+	setValidEnv(t)
+	os.Unsetenv("LMS_BUNNY_WEBHOOK_SECRET")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing LMS_BUNNY_WEBHOOK_SECRET")
 	}
 }
 
