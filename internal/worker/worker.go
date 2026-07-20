@@ -4,11 +4,14 @@
 package worker
 
 import (
+	"context"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 
 	"growth-lms/internal/config"
+	"growth-lms/internal/db"
 )
 
 // Queue names. Task 5/6 register real task handlers (email sends, webhook
@@ -18,9 +21,26 @@ const (
 	QueueCritical = "critical"
 )
 
+// publishSweepInterval is how often the scheduled-publish sweep runs (see
+// publish.go). One minute matches the spec's "scheduled asynq job"
+// description closely enough for an MVP without needing per-course
+// delayed-task bookkeeping.
+const publishSweepInterval = time.Minute
+
 // Run starts the asynq server and blocks until it shuts down or ctx is
 // canceled. redisAddr/opts come from cfg.Redis.URL parsed by the caller.
 func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) error {
+	// Task 4 is the first worker consumer that needs direct DB access:
+	// the scheduled-publish sweep and the Bunny webhook task both update
+	// Postgres directly, at the pool's own admin privileges — there's no
+	// per-request caller to scope RLS session variables to for a
+	// background job.
+	pool, err := db.NewPool(context.Background(), cfg.Database.URL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
 	srv := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: 10,
 		Queues: map[string]int{
@@ -31,8 +51,11 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 	})
 
 	mux := asynq.NewServeMux()
-	// Task-specific handlers register themselves here in later tasks, e.g.:
-	//   mux.HandleFunc(email.TypeSendWelcome, email.HandleSendWelcome)
+	mux.HandleFunc(TypeBunnyTranscodeComplete, handleBunnyTranscodeComplete(pool))
+
+	sweepCtx, cancelSweep := context.WithCancel(context.Background())
+	defer cancelSweep()
+	go runPublishSweepLoop(sweepCtx, pool, logger, publishSweepInterval)
 
 	logger.Info("worker starting", "env", cfg.Env)
 	return srv.Run(mux)

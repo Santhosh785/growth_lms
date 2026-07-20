@@ -33,7 +33,14 @@ func (r *OrgRepo) Create(ctx context.Context, q Querier, name, slug string) (*Or
 	// Postgres's evaluation of function-returning-composite expansion,
 	// silently double-inserting. Evaluating it once in a derived table and
 	// projecting from that avoids the re-evaluation entirely.
-	row := q.QueryRow(ctx, `SELECT (o).* FROM (SELECT create_organization($1, $2) AS o) s`, name, slug)
+	//
+	// Columns are named explicitly (not `(o).*`) so a later ALTER TABLE ...
+	// ADD COLUMN on organizations (e.g. Task 4's bunny_library_id) can't
+	// silently shift this Scan out of sync with the row shape.
+	row := q.QueryRow(ctx, `
+		SELECT (o).id, (o).slug, (o).name, (o).created_by_user_id, (o).created_at, (o).updated_at
+		FROM (SELECT create_organization($1, $2) AS o) s
+	`, name, slug)
 
 	var o Organization
 	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedByUserID, &o.CreatedAt, &o.UpdatedAt); err != nil {
@@ -79,6 +86,39 @@ func (r *OrgRepo) Delete(ctx context.Context, q Querier, id string) error {
 	tag, err := q.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("models: delete organization: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetBunnyLibraryID returns the org's Bunny Stream library ID, or "" if
+// one hasn't been provisioned yet (spec: lazily provisioned on first
+// video upload — orgs that never upload video never provision a
+// library).
+func (r *OrgRepo) GetBunnyLibraryID(ctx context.Context, q Querier, orgID string) (string, error) {
+	var libraryID *string
+	if err := q.QueryRow(ctx, `SELECT bunny_library_id FROM organizations WHERE id = $1`, orgID).Scan(&libraryID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("models: get bunny library id: %w", err)
+	}
+	if libraryID == nil {
+		return "", nil
+	}
+	return *libraryID, nil
+}
+
+// SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
+// for an org. Only ever called once per org (the first video upload finds
+// GetBunnyLibraryID returning "" and calls this immediately after
+// media.BunnyClient.CreateLibrary succeeds).
+func (r *OrgRepo) SetBunnyLibraryID(ctx context.Context, q Querier, orgID, libraryID string) error {
+	tag, err := q.Exec(ctx, `UPDATE organizations SET bunny_library_id = $2, updated_at = now() WHERE id = $1`, orgID, libraryID)
+	if err != nil {
+		return fmt.Errorf("models: set bunny library id: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

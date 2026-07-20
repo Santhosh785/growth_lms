@@ -66,9 +66,10 @@ type RedisConfig struct {
 }
 
 type BunnyNetConfig struct {
-	APIKey      string
-	StorageZone string
-	CDNURL      string
+	APIKey        string
+	StorageZone   string
+	CDNURL        string
+	WebhookSecret string
 }
 
 type ResendConfig struct {
@@ -118,6 +119,7 @@ func Load() (*Config, error) {
 		{"LMS_BUNNY_API_KEY", nil},
 		{"LMS_BUNNY_STORAGE_ZONE", nil},
 		{"LMS_BUNNY_CDN_URL", validateURL},
+		{"LMS_BUNNY_WEBHOOK_SECRET", nil},
 		{"LMS_RESEND_API_KEY", nil},
 		{"LMS_RAZORPAY_KEY_ID", nil},
 		{"LMS_RAZORPAY_KEY_SECRET", nil},
@@ -173,9 +175,10 @@ func Load() (*Config, error) {
 			URL: values["LMS_REDIS_URL"],
 		},
 		BunnyNet: BunnyNetConfig{
-			APIKey:      values["LMS_BUNNY_API_KEY"],
-			StorageZone: values["LMS_BUNNY_STORAGE_ZONE"],
-			CDNURL:      values["LMS_BUNNY_CDN_URL"],
+			APIKey:        values["LMS_BUNNY_API_KEY"],
+			StorageZone:   values["LMS_BUNNY_STORAGE_ZONE"],
+			CDNURL:        values["LMS_BUNNY_CDN_URL"],
+			WebhookSecret: values["LMS_BUNNY_WEBHOOK_SECRET"],
 		},
 		Resend: ResendConfig{
 			APIKey: values["LMS_RESEND_API_KEY"],
