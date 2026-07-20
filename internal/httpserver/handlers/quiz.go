@@ -227,6 +227,10 @@ func SubmitQuiz(d *AuthDeps) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 				return
 			}
+			if err := evaluateAndIssueCertificateIfComplete(ctx, tx, d, course.ID, ac.UserID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{

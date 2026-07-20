@@ -76,3 +76,11 @@ func (f *FakeStorageClient) HeadObject(ctx context.Context, bucket, path string)
 	size, ok := f.objects[bucket+"/"+path]
 	return size, ok, nil
 }
+
+// UploadServerSide records the object as existing (so a subsequent
+// HeadObject sees it), mirroring what a real server-side upload would
+// leave behind.
+func (f *FakeStorageClient) UploadServerSide(ctx context.Context, bucket, path string, data []byte, contentType string) error {
+	f.RegisterObject(bucket, path, int64(len(data)))
+	return nil
+}

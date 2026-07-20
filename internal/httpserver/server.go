@@ -116,6 +116,13 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerCourseRoutes(engine, deps, db)
 	registerLearnerRoutes(engine, deps, db)
 
+	// PUBLIC, unauthenticated certificate verification (Task 5 Stage 6):
+	// mounted directly on the engine, no Authenticate/WithRequestTx at
+	// all — see handlers.VerifyCertificate's doc comment for why this is
+	// safe (a SECURITY DEFINER function hard-limits what can ever be
+	// returned, not RLS session context this request doesn't have).
+	engine.GET("/certificates/verify/:certificateId", handlers.VerifyCertificate(deps))
+
 	return engine
 }
 
@@ -322,6 +329,13 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	authed.Use(middleware.Authenticate(d.Verifier))
 	authed.Use(middleware.WithRequestTx(db))
 
+	// GET /api/certificates lists the caller's own certificates
+	// (ListByLearner is already learner-scoped by RLS + the query itself)
+	// — it needs only authentication, not RequireEntitlement (which is
+	// course-scoped and doesn't apply to a cross-course listing) or an
+	// :courseId in the path at all.
+	authed.GET("/certificates", handlers.ListCertificates(d))
+
 	course := authed.Group("/courses/:courseId")
 	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
 
@@ -340,6 +354,10 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	course.POST("/lessons/:lessonId/blocks/:blockId/assignment/upload", entitled, handlers.UploadAssignmentSubmission(d))
 	course.POST("/lessons/:lessonId/blocks/:blockId/assignment/submit", entitled, handlers.SubmitAssignment(d))
 	course.GET("/lessons/:lessonId/blocks/:blockId/assignment/submissions", entitled, handlers.GetAssignmentSubmissions(d))
+
+	// Task 5 Stage 6: the learner's own certificate for this course, if
+	// issued.
+	course.GET("/certificate", entitled, handlers.GetCourseCertificate(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

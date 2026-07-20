@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,13 @@ type StorageClient interface {
 	// "/complete" call for an object that was never actually uploaded
 	// can never create a usable asset record.
 	HeadObject(ctx context.Context, bucket, path string) (sizeBytes int64, exists bool, err error)
+	// UploadServerSide uploads bytes directly, called by the Go process
+	// itself rather than issued as a signed URL for a browser to PUT to —
+	// used for content the server generates (e.g. Task 5's certificate
+	// PDFs), never for learner/teacher-supplied uploads, which must always
+	// go through CreateSignedUploadURL + HeadObject so the upload is
+	// verified rather than trusted.
+	UploadServerSide(ctx context.Context, bucket, path string, data []byte, contentType string) error
 }
 
 // RealStorageClient talks to Supabase Storage's REST API directly, using
@@ -149,4 +157,33 @@ func (c *RealStorageClient) HeadObject(ctx context.Context, bucket, path string)
 		return 0, false, fmt.Errorf("media: decode object info response: %w", err)
 	}
 	return out.Size, true, nil
+}
+
+// UploadServerSide calls Supabase Storage's
+// POST /storage/v1/object/{bucket}/{path} endpoint to upload bytes
+// directly using the service-role key — the same credential every other
+// method on this client uses, since this is a trusted server-to-server
+// call, not a signed URL handed to a browser. Overwrites any existing
+// object at path (x-upsert: true), since server-generated content (e.g. a
+// re-issued certificate) is expected to be idempotently replaceable.
+func (c *RealStorageClient) UploadServerSide(ctx context.Context, bucket, path string, data []byte, contentType string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/storage/v1/object/"+bucket+"/"+path, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("media: build upload request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.serviceRoleKey)
+	req.Header.Set("apikey", c.serviceRoleKey)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("x-upsert", "true")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("media: upload server side: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("media: supabase storage returned status %d", resp.StatusCode)
+	}
+	return nil
 }

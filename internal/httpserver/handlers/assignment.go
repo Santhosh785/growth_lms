@@ -178,6 +178,22 @@ func SubmitAssignment(d *AuthDeps) gin.HandlerFunc {
 			return
 		}
 
+		// An assignment block being submitted is one of the four ways a
+		// lesson completes per spec (video threshold / non-video first-view
+		// / quiz pass / assignment submitted) — there's no pass/fail for an
+		// assignment, submission itself is what completes the lesson. This
+		// was a gap in Stage 5 (assignment.go never called MarkComplete);
+		// fixed here in Stage 6 alongside the other three call sites so all
+		// four uniformly feed into certificate evaluation.
+		if _, err := d.LearnerProgress.MarkComplete(ctx, tx, course.OrgID, ac.UserID, lesson.ID, course.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if err := evaluateAndIssueCertificateIfComplete(ctx, tx, d, course.ID, ac.UserID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+
 		c.JSON(http.StatusCreated, assignmentSubmissionResponse(submission, nil))
 	}
 }

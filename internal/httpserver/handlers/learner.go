@@ -258,6 +258,10 @@ func ReportLessonProgress(d *AuthDeps) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 				return
 			}
+			if err := evaluateAndIssueCertificateIfComplete(ctx, tx, d, course.ID, ac.UserID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, lessonProgressResponse(progress))
@@ -282,6 +286,10 @@ func CompleteLesson(d *AuthDeps) gin.HandlerFunc {
 
 		progress, err := d.LearnerProgress.MarkComplete(ctx, tx, course.OrgID, ac.UserID, lesson.ID, course.ID)
 		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if err := evaluateAndIssueCertificateIfComplete(ctx, tx, d, course.ID, ac.UserID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
