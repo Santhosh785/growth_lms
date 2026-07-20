@@ -15,9 +15,9 @@ import (
 // blocks, at the moment of publish (or restore). Self-contained so
 // diffing/restoration never needs to re-query the live tables.
 type CourseSnapshot struct {
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	Chapters    []SnapshotChapter  `json:"chapters"`
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
+	Chapters    []SnapshotChapter `json:"chapters"`
 }
 
 type SnapshotChapter struct {

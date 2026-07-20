@@ -12,6 +12,8 @@ import (
 
 	"growth-lms/internal/config"
 	"growth-lms/internal/db"
+	"growth-lms/internal/models"
+	"growth-lms/internal/notify"
 )
 
 // Queue names. Task 5/6 register real task handlers (email sends, webhook
@@ -50,8 +52,15 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 		Logger: newAsynqLogger(logger),
 	})
 
+	profiles := models.NewProfileRepo()
+	emailClient := notify.NewResendClient(cfg.Resend)
+
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(TypeBunnyTranscodeComplete, handleBunnyTranscodeComplete(pool))
+	mux.HandleFunc(TypeNotifyAssignmentGraded, handleNotifyAssignmentGraded(pool, profiles, emailClient))
+	mux.HandleFunc(TypeNotifyCertificateIssued, handleNotifyCertificateIssued(pool, profiles, emailClient))
+	mux.HandleFunc(TypeNotifyCourseAnnouncement, handleNotifyCourseAnnouncement(pool, profiles, emailClient))
+	mux.HandleFunc(TypeNotifyCourseReminder, handleNotifyCourseReminder(pool, profiles, emailClient))
 
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	defer cancelSweep()

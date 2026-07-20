@@ -11,14 +11,17 @@ import (
 )
 
 // Block types, matching the CHECK constraint in
-// db/migrations/000003_course_domain.up.sql. Exactly these five — no
-// others are ever valid, per the spec.
+// db/migrations/000003_course_domain.up.sql, widened by
+// db/migrations/000004_learner_journey.up.sql to add "assignment" as a
+// 6th type (grilling-record.md Q1). Exactly these six — no others are
+// ever valid, per the spec.
 const (
-	BlockTypeText  = "text"
-	BlockTypeImage = "image"
-	BlockTypeVideo = "video"
-	BlockTypeFile  = "file"
-	BlockTypeQuiz  = "quiz"
+	BlockTypeText       = "text"
+	BlockTypeImage      = "image"
+	BlockTypeVideo      = "video"
+	BlockTypeFile       = "file"
+	BlockTypeQuiz       = "quiz"
+	BlockTypeAssignment = "assignment"
 )
 
 type Block struct {
@@ -77,6 +80,16 @@ type QuizQuestion struct {
 // QuizBlockContent is the JSONB shape for a "quiz" block.
 type QuizBlockContent struct {
 	Questions []QuizQuestion `json:"questions"`
+}
+
+// AssignmentBlockContent is the JSONB shape for an "assignment" block
+// (grilling-record.md Q1). DueDate is optional (nil means no deadline, so
+// every submission is on_time); AllowResubmission governs whether a
+// learner may submit more than once (Task 5 Stage 5).
+type AssignmentBlockContent struct {
+	Instructions      string     `json:"instructions"`
+	DueDate           *time.Time `json:"due_date,omitempty"`
+	AllowResubmission bool       `json:"allow_resubmission"`
 }
 
 type BlockRepo struct{}

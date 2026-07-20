@@ -74,6 +74,11 @@ type BunnyNetConfig struct {
 
 type ResendConfig struct {
 	APIKey string
+	// FromEmail is the sender address used for all Task 5 notification
+	// emails. Not part of the `required` list below (Task 2/3 never wired
+	// this up) — it has a sane development default and can be overridden
+	// per-environment without affecting existing config validation tests.
+	FromEmail string
 }
 
 type RazorpayConfig struct {
@@ -181,7 +186,8 @@ func Load() (*Config, error) {
 			WebhookSecret: values["LMS_BUNNY_WEBHOOK_SECRET"],
 		},
 		Resend: ResendConfig{
-			APIKey: values["LMS_RESEND_API_KEY"],
+			APIKey:    values["LMS_RESEND_API_KEY"],
+			FromEmail: getEnv("LMS_RESEND_FROM_EMAIL", "notifications@growth-lms.example"),
 		},
 		Razorpay: RazorpayConfig{
 			KeyID:     values["LMS_RAZORPAY_KEY_ID"],

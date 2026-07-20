@@ -10,21 +10,22 @@ import (
 )
 
 type Lesson struct {
-	ID        string
-	ChapterID string
-	CourseID  string
-	OrgID     string
-	Title     string
-	SortOrder float64
-	CreatedBy string
-	UpdatedAt time.Time
+	ID                    string
+	ChapterID             string
+	CourseID              string
+	OrgID                 string
+	Title                 string
+	SortOrder             float64
+	CreatedBy             string
+	UpdatedAt             time.Time
+	WatchThresholdPercent *int
 }
 
 type LessonRepo struct{}
 
 func NewLessonRepo() *LessonRepo { return &LessonRepo{} }
 
-const lessonColumns = `id, chapter_id, course_id, org_id, title, sort_order, created_by, updated_at`
+const lessonColumns = `id, chapter_id, course_id, org_id, title, sort_order, created_by, updated_at, watch_threshold_percent`
 
 func (r *LessonRepo) Create(ctx context.Context, q Querier, chapterID, courseID, orgID, createdBy, title string, sortOrder float64) (*Lesson, error) {
 	row := q.QueryRow(ctx, `
@@ -36,6 +37,17 @@ func (r *LessonRepo) Create(ctx context.Context, q Querier, chapterID, courseID,
 
 func (r *LessonRepo) Get(ctx context.Context, q Querier, id string) (*Lesson, error) {
 	row := q.QueryRow(ctx, `SELECT `+lessonColumns+` FROM lessons WHERE id = $1`, id)
+	return scanLesson(row)
+}
+
+// SetWatchThresholdPercent sets or clears (nil) the video watch-completion
+// threshold for a lesson. NULL falls back to a hardcoded 80% default
+// applied in Go (see grilling-record.md Q3), not here — this repo just
+// stores whatever the caller decided.
+func (r *LessonRepo) SetWatchThresholdPercent(ctx context.Context, q Querier, id string, watchThresholdPercent *int) (*Lesson, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE lessons SET watch_threshold_percent = $2, updated_at = now()
+		WHERE id = $1 RETURNING `+lessonColumns, id, watchThresholdPercent)
 	return scanLesson(row)
 }
 
@@ -105,7 +117,7 @@ func (r *LessonRepo) Delete(ctx context.Context, q Querier, id string) error {
 
 func scanLesson(row pgx.Row) (*Lesson, error) {
 	var l Lesson
-	if err := row.Scan(&l.ID, &l.ChapterID, &l.CourseID, &l.OrgID, &l.Title, &l.SortOrder, &l.CreatedBy, &l.UpdatedAt); err != nil {
+	if err := row.Scan(&l.ID, &l.ChapterID, &l.CourseID, &l.OrgID, &l.Title, &l.SortOrder, &l.CreatedBy, &l.UpdatedAt, &l.WatchThresholdPercent); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -116,7 +128,7 @@ func scanLesson(row pgx.Row) (*Lesson, error) {
 
 func scanLessonRows(rows pgx.Rows) (*Lesson, error) {
 	var l Lesson
-	if err := rows.Scan(&l.ID, &l.ChapterID, &l.CourseID, &l.OrgID, &l.Title, &l.SortOrder, &l.CreatedBy, &l.UpdatedAt); err != nil {
+	if err := rows.Scan(&l.ID, &l.ChapterID, &l.CourseID, &l.OrgID, &l.Title, &l.SortOrder, &l.CreatedBy, &l.UpdatedAt, &l.WatchThresholdPercent); err != nil {
 		return nil, fmt.Errorf("models: scan lesson: %w", err)
 	}
 	return &l, nil
