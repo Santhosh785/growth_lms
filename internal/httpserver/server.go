@@ -105,6 +105,8 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		ResumePositions:     models.NewLearnerResumePositionRepo(),
 		LearnerProgress:     models.NewLearnerLessonProgressRepo(),
 		Certificates:        models.NewLearnerCertificateRepo(),
+		QuizAttempts:        models.NewLearnerQuizAttemptRepo(),
+		QuizScores:          models.NewLearnerQuizScoreRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
@@ -323,6 +325,9 @@ func registerLearnerRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	course.POST("/lessons/:lessonId/progress", entitled, handlers.ReportLessonProgress(d))
 	course.POST("/lessons/:lessonId/complete", entitled, handlers.CompleteLesson(d))
 	course.GET("/progress", entitled, handlers.GetCourseProgress(d))
+
+	course.GET("/lessons/:lessonId/blocks/:blockId/quiz", entitled, handlers.GetQuiz(d))
+	course.POST("/lessons/:lessonId/blocks/:blockId/quiz/submit", entitled, handlers.SubmitQuiz(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

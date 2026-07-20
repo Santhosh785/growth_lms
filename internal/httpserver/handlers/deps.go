@@ -49,4 +49,6 @@ type AuthDeps struct {
 	ResumePositions     *models.LearnerResumePositionRepo
 	LearnerProgress     *models.LearnerLessonProgressRepo
 	Certificates        *models.LearnerCertificateRepo
+	QuizAttempts        *models.LearnerQuizAttemptRepo
+	QuizScores          *models.LearnerQuizScoreRepo
 }
