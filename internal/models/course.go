@@ -24,19 +24,19 @@ const (
 )
 
 type Course struct {
-	ID             string
-	OrgID          string
-	Title          string
-	Description    string
-	CoverImageURL  *string
-	CategoryID     *string
-	Status         string
-	PublishDate    *time.Time
-	CreatedBy      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	PublishedAt    *time.Time
-	ArchivedAt     *time.Time
+	ID            string
+	OrgID         string
+	Title         string
+	Description   string
+	CoverImageURL *string
+	CategoryID    *string
+	Status        string
+	PublishDate   *time.Time
+	CreatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	PublishedAt   *time.Time
+	ArchivedAt    *time.Time
 }
 
 // ErrHasChildren is returned by chapter/lesson delete when child rows
