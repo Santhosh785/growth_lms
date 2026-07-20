@@ -290,3 +290,37 @@
 **Options:** 1. No hard limit for MVP, rate-limited instead — 2. Hard cap (e.g. 3 orgs per user)
 **Recommended:** Option 1 (avoids an arbitrary cap needing a support-ticket escape hatch; rate limiting blunts scripted abuse)
 **Chosen:** Option 1, as recommended
+
+## Session 8 — grill-me follow-up on Task 3 (6 questions)
+
+Triggered by the HTML+HTMX decision in Session 7 (Q46), which opened new gaps the original spec didn't cover.
+
+### Q56: Templating choice
+**Options:** 1. Stdlib html/template + htmx — 2. templ (a-h/templ)
+**Recommended:** Option 1 (zero new dependencies, matches the plan's stated stack literally)
+**Chosen:** Option 1, as recommended
+
+### Q57: CSRF protection
+**Options:** 1. CSRF middleware on cookie-session routes — 2. Skip CSRF for MVP, rely on SameSite alone
+**Recommended:** Option 1 (non-negotiable once cookies drive real mutations)
+**Chosen:** Option 1, as recommended
+
+### Q58: Cookie contents
+**Options:** 1. Opaque session ID, server-side Redis lookup — 2. JWT directly in an HttpOnly cookie
+**Recommended:** Option 1 (instant server-side logout, smaller XSS blast radius, JWT never touches the browser)
+**Chosen:** Option 1, as recommended
+
+### Q59: Org context precedence
+**Options:** 1. URL slug always wins when present — 2. Session/header org always wins
+**Recommended:** Option 1 (avoids ever silently acting on the wrong org)
+**Chosen:** Option 1, as recommended
+
+### Q60: Platform owner bootstrap
+**Options:** 1. One-time CLI/migration command — 2. Env-var-driven auto-promotion on boot
+**Recommended:** Option 1 (auditable, no standing privilege-escalation path left in the API surface)
+**Chosen:** Option 1, as recommended
+
+### Q61: Password policy
+**Options:** 1. Defer to Supabase Auth defaults — 2. App enforces its own stricter policy
+**Recommended:** Option 1 (avoids duplicating/drifting from validation Supabase already does)
+**Chosen:** Option 1, as recommended

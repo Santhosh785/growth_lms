@@ -84,7 +84,7 @@ Create the following tables with their RLS policies:
 
 Implement email/password registration, email verification, login, password reset, logout, and account deletion. These flows use Supabase Auth's native APIs under the hood but are exposed via:
 
-- **HTML pages + HTMX endpoints:** Login page, register page, password-reset request page, password-reset confirmation page, email-verification page, account settings page.
+- **HTML pages + HTMX endpoints:** Login page, register page, password-reset request page, password-reset confirmation page, email-verification page, account settings page. Rendered with Go's stdlib `html/template` (no third-party templating library), progressively enhanced with htmx. All state-changing HTML/HTMX form routes are protected by CSRF middleware (e.g. a double-submit-cookie or `gin-contrib/csrf`-style token); JSON bearer-token API routes are exempt, since they carry no ambient cookie auth.
 - **JSON API endpoints** (for future mobile/third-party clients):
   - `POST /api/auth/register` — register, returns JWT or verification-required response.
   - `POST /api/auth/verify-email` — confirm email via token.
@@ -96,16 +96,20 @@ Implement email/password registration, email verification, login, password reset
 
 **Email verification is mandatory before first login.** Registration always returns a verification-required response (never a JWT); `POST /api/auth/login` rejects unverified accounts with a clear error. This applies to org self-service creation too — an unverified user cannot create or join an organization, since doing so requires being logged in.
 
+**Password policy: defer entirely to Supabase Auth's defaults** — the Go app adds no independent password-strength validation; the registration HTML form may surface Supabase's minimum as a UI hint, but the source of truth for what's accepted is Supabase Auth itself.
+
+**Platform-owner bootstrap:** the first `profiles.is_platform_owner = true` row is set via a one-time `serve bootstrap-owner --email=<email>` CLI subcommand (same single-binary `serve`/`worker` pattern as Task 2), promoting an existing verified profile. Run manually once during initial deployment setup; the promotion is logged to `audit_events`. There is no API endpoint or env-var auto-promotion path — no standing privilege-escalation surface is left in the running server.
+
 Rate-limit login, registration, and password-reset endpoints to prevent brute force (e.g., 5 attempts per 15 minutes per IP).
 
 ### JWT Verification Middleware
 
 Create a middleware that:
 
-1. Extracts JWT from `Authorization: Bearer <token>` header (JSON API) or session cookie (HTML flows).
+1. Extracts JWT from `Authorization: Bearer <token>` header (JSON API) or resolves it from the session cookie (HTML flows). The HTML session cookie holds an opaque, random session ID only — never the JWT itself; the ID maps in Redis to the stored Supabase JWT/refresh-token pair. This keeps logout an instant server-side delete and the JWT off the wire to the browser, shrinking the XSS blast radius versus a JWT-bearing cookie.
 2. Verifies the JWT signature using Supabase's public key.
 3. Resolves the JWT's `sub` claim to a `profiles` row.
-4. Determines the caller's organization context (from URL slug, header, or session).
+4. Determines the caller's organization context. **Precedence when signals conflict:** for routes with an `:org_slug` in the URL, the slug is always authoritative — the middleware resolves the caller's role fresh from `memberships` for that org (even if it differs from the session's "last active org") and returns 403 if they're not a member. Session/header-based org context is used only for routes with no org in the URL (e.g. a generic `/dashboard` redirecting to the user's default org).
 5. Resolves the caller's role within that org (from `memberships` table).
 6. Issues Postgres session variables: `SET LOCAL app.current_user_id = '<user_id>'`, `SET LOCAL app.current_org_id = '<org_id>'`, `SET LOCAL app.current_role = '<role>'`.
 7. Passes the context (user ID, org ID, role) to downstream handlers.
