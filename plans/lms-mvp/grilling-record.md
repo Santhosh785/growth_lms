@@ -324,3 +324,94 @@ Triggered by the HTML+HTMX decision in Session 7 (Q46), which opened new gaps th
 **Options:** 1. Defer to Supabase Auth defaults — 2. App enforces its own stricter policy
 **Recommended:** Option 1 (avoids duplicating/drifting from validation Supabase already does)
 **Chosen:** Option 1, as recommended
+
+## Session 9 — grill-me on Task 4 (16 questions)
+
+### Q62: Permission-check pattern
+**Options:** 1. Extend Task 3's `permissionMatrix`/`Can(role, action)` with course-domain actions — 2. Ad-hoc role checks inline per handler
+**Recommended:** Option 1 (established pattern, one auditable place, avoids drift)
+**Chosen:** Option 1, as recommended
+
+### Q63: sort_order type and precision
+**Options:** 1. NUMERIC(20,10) + periodic renormalize on precision exhaustion — 2. float8, no renormalization — 3. Integer with gaps (step 1000)
+**Recommended:** Option 1 (exact arithmetic, self-healing, no client-side full-reorder fallback needed)
+**Chosen:** Option 1, as recommended
+
+### Q64: Video pipeline
+**Options:** 1. Bunny Stream, one library per org, verified webhook — 2. Bunny Stream, shared library, polling — 3. Bunny Storage Zone + custom transcoding
+**Recommended:** Option 1 (hard tenant isolation, vendor-managed transcoding, matches the "verified webhook only" rule already established for payments)
+**Chosen:** Option 1, as recommended
+
+### Q65: Chapter/lesson delete with children
+**Options:** 1. Reject (409) if non-empty, require empty first — 2. Cascade soft-delete — 3. Cascade hard-delete
+**Recommended:** Option 1 (no data loss, no soft-delete bookkeeping needed for these entities)
+**Chosen:** Option 1, as recommended
+
+### Q66: Course hard-delete condition (attempts table doesn't exist yet)
+**Options:** 1. Allow when status=draft only; Task 5 adds an FK from attempts to courses going forward — 2. Block all hard-delete in Task 4
+**Recommended:** Option 1 (draft courses can never have attempts in any task's design; DB constraint keeps it safe once attempts exists)
+**Chosen:** Option 1, as recommended
+
+### Q67: Text block sanitization
+**Options:** 1. bluemonday allowlist policy (p, strong, em, u, ul, ol, li, br, a[href], h1-h3) — 2. Regex/manual tag stripping
+**Recommended:** Option 1 (regex-based HTML sanitization is a well-known XSS bypass source)
+**Chosen:** Option 1, as recommended
+
+### Q68: Quiz question types
+**Options:** 1. mcq and true_false only — 2. mcq, true_false, and short_answer
+**Recommended:** Option 1 (short_answer has no single correct index; scoring shape belongs to Task 5)
+**Chosen:** Option 2 (include short_answer now so Task 5 doesn't need a schema migration to add the type)
+
+### Q69: short_answer accepted-answer field shape
+**Options:** 1. `accepted_answers: string[]` — 2. `correct_answer_text: string`
+**Recommended:** Option 1 (supports multiple accepted phrasings without a later migration)
+**Chosen:** Option 1, as recommended
+
+### Q70: Category/tag management
+**Options:** 1. Categories: owner-only curated CRUD; tags: get-or-create on course-tagging — 2. Both get full CRUD, teacher+owner
+**Recommended:** Option 1 (categories stay a curated taxonomy; tags stay freeform without blocking teachers on an admin)
+**Chosen:** Option 1, as recommended
+
+### Q71: Asset storage cleanup
+**Options:** 1. No storage deletion in Task 4; orphaned assets persist for a future cleanup task — 2. Reference-counted hard-delete
+**Recommended:** Option 1 (duplication shares asset references; ref-counting adds real complexity to an already-large task)
+**Chosen:** Option 1, as recommended
+
+### Q72: Video processing state
+**Options:** 1. `processing_status` on assets (pending/processing/ready/failed) + HTMX polling in editor; publish rejects non-ready video — 2. No status tracking, treat asset as ready immediately
+**Recommended:** Option 1 (surfaces transcoding lag to the teacher instead of a possibly-broken publish)
+**Chosen:** Option 1, as recommended
+
+### Q73: Preview page scope
+**Options:** 1. Task 4 builds its own minimal read-only preview template — 2. Defer /preview entirely to Task 5
+**Recommended:** Option 1 (Task 5's real learner player doesn't exist yet and may look completely different; avoids blocking Task 4 on Task 5's design)
+**Chosen:** Option 1, as recommended
+
+### Q74: "scheduled" status placement (spec said published→scheduled, which reads as a documentation bug)
+**Options:** 1. Fix to review→scheduled (future publish_date), with an asynq job auto-transitioning scheduled→published (snapshotting then) — 2. Implement literally as written (published→scheduled)
+**Recommended:** Option 1 (matches the acceptance criterion that only published courses with a past publish_date are learner-visible; the literal spec ordering serves no real product need)
+**Chosen:** Option 1, as recommended
+
+### Q75: Version snapshot cadence
+**Options:** 1. Always snapshot on every publish, unconditionally — 2. Skip if unchanged since last version
+**Recommended:** Option 1 (simple, predictable, matches the spec's literal wording; diffing to skip isn't worth the complexity)
+**Chosen:** Option 1, as recommended
+
+### Q76: Non-video upload completion confirmation
+**Options:** 1. Client-reported completion + backend HEAD verification against Supabase Storage before creating the assets row — 2. Trust client-reported completion only
+**Recommended:** Option 1 (prevents a client from forging asset metadata for a file that was never actually uploaded)
+**Chosen:** Option 1, as recommended
+
+### Q77: Test coverage scope for Task 4
+**Options:** 1. RLS isolation + permission-matrix + status-transition + signed-URL-scoping tests written alongside the task, matching Task 3's precedent — 2. Only unit tests for pure logic (sort_order, duplication, transitions), defer isolation/permission tests to Task 11
+**Recommended:** Option 1 (a cross-tenant RLS bug is the highest-risk failure mode; Task 3 already established security-critical paths get tested alongside the task, not deferred)
+**Chosen:** Option 1, as recommended
+
+## Session 9 follow-up (1 question)
+
+Triggered by Q64 (Bunny Stream per-org library), which requires organizations to own a `bunny_library_id` not present in Task 3's schema.
+
+### Q78: Bunny library provisioning timing
+**Options:** 1. Lazy provisioning on first video upload, via a Task 4 migration adding `bunny_library_id` to `organizations` — 2. Eager provisioning at org-creation time (reopens Task 3's endpoint)
+**Recommended:** Option 1 (keeps org creation free of a dependency on Task 4's vendor; orgs that never use video never provision a library; no need to reopen already-merged Task 3 code)
+**Chosen:** Option 1, as recommended
