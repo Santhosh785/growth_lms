@@ -238,3 +238,55 @@
 **Options:** 1. Yes, remove it — 2. Keep it, clarify meaning instead
 **Recommended:** Option 1 (no Go-side signing key exists in this architecture — Supabase Auth signs JWTs, Go only verifies)
 **Chosen:** Option 1, as recommended
+
+## Session 7 — grill-me on Task 3 (10 questions)
+
+### Q46: HTML vs JSON scope
+**Options:** 1. JSON-API only for now, defer HTML/HTMX — 2. Build HTML+HTMX pages now
+**Recommended:** Option 1 (keeps Task 3 focused on the identity/tenancy backend; a thin HTML layer can wrap the same API later)
+**Chosen:** Option 2, against the recommendation: user wants HTML+HTMX pages built now, per the original spec
+
+### Q47: Email verify gate
+**Options:** 1. Verify before first login — 2. Login allowed, verification nagged later
+**Recommended:** Option 1 (avoids unverified accounts creating orgs/spamming invitations before confirming ownership of the email)
+**Chosen:** Option 1, as recommended
+
+### Q48: Deletion cascade
+**Options:** 1. Block deletion, require transfer first — 2. Auto-delete owned orgs (cascade) — 3. Auto-transfer to another member
+**Recommended:** Option 1 (prevents orphaned/undeletable orgs and accidental data loss for other members)
+**Chosen:** Option 1, as recommended
+
+### Q49: Ownership transfer
+**Options:** 1. Reuse existing role-change endpoint (allow multiple simultaneous owners) — 2. Dedicated transfer-ownership endpoint
+**Recommended:** Option 1 (no new endpoint needed; the existing role-change endpoint already covers it)
+**Chosen:** Option 1, as recommended
+
+### Q50: Backoff formula
+**Options:** 1. 5 fails/15min per IP + per-email lockout doubling to a 1-hour cap — 2. Pure per-attempt exponential delay
+**Recommended:** Option 1 (bounded, easy to reason about and test)
+**Chosen:** Option 1, as recommended
+
+### Q51: API token TTL
+**Options:** 1. Optional expiry, default none — 2. Mandatory expiry (e.g. 1 year max)
+**Recommended:** Option 1 (matches common API-token UX, no forced-rotation flow needed for MVP)
+**Chosen:** Option 1, as recommended
+
+### Q52: Invite no-account
+**Options:** 1. Accept link routes to register, then auto-joins — 2. Accept requires pre-existing account
+**Recommended:** Option 1 (better UX, one continuous flow instead of two disconnected steps)
+**Chosen:** Option 1, as recommended
+
+### Q53: Invite email owner
+**Options:** 1. Task 3 sends a plain transactional email now (via Task 2's Resend integration) — 2. Task 3 stubs it, Task 7 implements sending
+**Recommended:** Option 1 (invitations must be fully functional end-to-end today; Task 7 can reskin later)
+**Chosen:** Option 1, as recommended
+
+### Q54: Moderator scope
+**Options:** 1. Moderator = learner-equivalent for now — 2. Moderator can manage members (not org settings)
+**Recommended:** Option 1 (keeps Task 3's permission matrix simple; only 'owner' has elevated rights; Task 7 defines moderator's real powers)
+**Chosen:** Option 1, as recommended
+
+### Q55: Org creation limits
+**Options:** 1. No hard limit for MVP, rate-limited instead — 2. Hard cap (e.g. 3 orgs per user)
+**Recommended:** Option 1 (avoids an arbitrary cap needing a support-ticket escape hatch; rate limiting blunts scripted abuse)
+**Chosen:** Option 1, as recommended

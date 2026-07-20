@@ -92,7 +92,9 @@ Implement email/password registration, email verification, login, password reset
   - `POST /api/auth/password-reset-request` — request reset, sends email.
   - `POST /api/auth/password-reset` — complete reset with token.
   - `POST /api/auth/logout` — revoke session/token.
-  - `POST /api/auth/delete-account` — delete user and cascade org ownership if applicable.
+  - `POST /api/auth/delete-account` — delete user; blocked (409, listing the orgs) if the user is a sole owner of any organization (see Ownership below).
+
+**Email verification is mandatory before first login.** Registration always returns a verification-required response (never a JWT); `POST /api/auth/login` rejects unverified accounts with a clear error. This applies to org self-service creation too — an unverified user cannot create or join an organization, since doing so requires being logged in.
 
 Rate-limit login, registration, and password-reset endpoints to prevent brute force (e.g., 5 attempts per 15 minutes per IP).
 
@@ -115,24 +117,26 @@ This middleware must work for both HTML/cookie-session and JSON bearer-token flo
 Implement CRUD and flow endpoints:
 
 - **Organization CRUD:**
-  - `POST /api/orgs` — create org, set creator as owner (requires auth).
+  - `POST /api/orgs` — create org, set creator as owner (requires auth, requires a verified email). No hard cap on how many orgs a user may own for MVP; the endpoint is covered by the same rate limiter as auth endpoints (e.g., 5 creations per hour per user) to blunt scripted abuse.
   - `GET /api/orgs/:org_slug` — fetch org details.
   - `PATCH /api/orgs/:org_slug` — update org name/settings (org owner only).
   - `DELETE /api/orgs/:org_slug` — delete org and cascade (org owner only).
 
 - **Membership management:**
   - `GET /api/orgs/:org_slug/members` — list members (org members only).
-  - `PATCH /api/orgs/:org_slug/members/:user_id/role` — change user's role (org owner only).
+  - `PATCH /api/orgs/:org_slug/members/:user_id/role` — change user's role (org owner only). An org may have multiple simultaneous owners (`memberships.role = 'owner'` is not unique per org). This endpoint doubles as the ownership-transfer mechanism: an owner promotes another member to `'owner'`, then may demote themselves or remove themselves — no separate transfer-ownership endpoint is needed.
   - `DELETE /api/orgs/:org_slug/members/:user_id` — remove user (org owner only, cannot remove self).
 
 - **Invitation flow:**
-  - `POST /api/orgs/:org_slug/invitations` — send invitation by email (org owner/teacher only).
+  - `POST /api/orgs/:org_slug/invitations` — send invitation by email (org owner/teacher only). Sends a plain transactional email (via Task 2's Resend integration) containing the accept link — invitations must be fully functional end-to-end in this task; Task 7 (Communities) may later restyle the template.
   - `GET /api/orgs/:org_slug/invitations` — list pending invitations (org members only).
-  - `POST /api/invitations/:token/accept` — accept invitation (no auth required, token validates).
+  - `POST /api/invitations/:token/accept` — accept invitation (no auth required, token validates). If no `profiles` row exists yet for the invited email, respond with a `registration_required` status (the HTML flow redirects to registration pre-filled with the invited email); once the account is created and its email verified, the pending invitation auto-accepts and creates the membership.
   - `POST /api/invitations/:token/decline` — decline invitation (no auth required).
   - `DELETE /api/orgs/:org_slug/invitations/:invitation_id` — revoke invitation (org owner only).
 
 All operations enforce role-based permissions server-side, not just in the UI.
+
+**Moderator role scope (this task only):** `'moderator'` is accepted as a valid role value in schema, invitations, and role-changes, but in Task 3's permission matrix it carries no rights beyond `'learner'` — only `'owner'` has elevated org/membership/API-token management rights. Task 7 (Communities) defines and adds moderator-specific permissions (discussion moderation) later, without requiring schema changes here.
 
 ### Permission Middleware & Helper
 
@@ -148,7 +152,7 @@ Document the permission model clearly (matrix of role → actions) so later task
 
 Implement API tokens scoped to an organization for third-party integrations:
 
-- `POST /api/orgs/:org_slug/api-tokens` — create token (org owner only), returns secret once.
+- `POST /api/orgs/:org_slug/api-tokens` — create token (org owner only), returns secret once. Accepts an optional `expires_at`; if omitted, the token never expires (revoke-only, matching common API-token UX like GitHub PATs).
 - `GET /api/orgs/:org_slug/api-tokens` — list tokens (org members only).
 - `DELETE /api/orgs/:org_slug/api-tokens/:token_id` — revoke token (org owner only).
 
@@ -156,9 +160,9 @@ Tokens are validated the same way as JWTs (set session variables) but log a diff
 
 ### Rate Limiting & Abuse Protection
 
-- Rate-limit auth endpoints: login/register/password-reset to 5 attempts per 15 minutes per IP.
-- Implement exponential backoff on failed logins to the same email.
-- Log rate-limit violations to audit_events for alerting.
+- Rate-limit auth endpoints: login/register/password-reset to 5 attempts per 15 minutes per IP (using Task 2's generic Redis-backed rate limiter).
+- **Per-email lockout on failed logins:** independent of the per-IP limit above, after 5 consecutive failed logins to the same email (regardless of source IP), lock that email out for 15 minutes; each subsequent lockout within the same failure streak doubles the lockout duration, capped at 1 hour. The streak (and its backoff level) resets on a successful login.
+- Log rate-limit violations and lockouts to audit_events for alerting.
 
 ### Audit Logging
 
