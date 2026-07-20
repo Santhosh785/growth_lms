@@ -261,6 +261,32 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	// doing anything, matching the "verified provider webhook only" rule
 	// the spec compares to the payments-webhook precedent.
 	engine.POST("/api/webhooks/bunny", handlers.BunnyWebhook(d))
+
+	// Lightweight HTMX course-editor UI: cookie-authenticated (the same
+	// session cookie the JSON API's Authenticate middleware already
+	// accepts), CSRF-protected on every mutating route (see
+	// middleware/csrf.go) — the first cookie-driven HTML mutation surface
+	// in this codebase, closing the gap Task 3's grilling record flagged
+	// (Q57) but never implemented.
+	editorAuthed := engine.Group("")
+	editorAuthed.Use(middleware.Authenticate(d.Verifier))
+	editorAuthed.Use(middleware.WithRequestTx(db))
+	editorAuthed.Use(middleware.EnsureCSRFCookie(d.Config))
+
+	editor := editorAuthed.Group("/courses/:courseId/edit")
+	editor.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+	editor.Use(middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher))
+
+	editor.GET("", handlers.CourseEditorPage(d))
+	editor.POST("/chapters", middleware.RequireCSRF(), handlers.CourseEditorCreateChapter(d))
+	editor.POST("/chapters/:chapterId/move", middleware.RequireCSRF(), handlers.CourseEditorMoveChapter(d))
+	editor.POST("/chapters/:chapterId/lessons", middleware.RequireCSRF(), handlers.CourseEditorCreateLesson(d))
+	editor.POST("/chapters/:chapterId/lessons/:lessonId/blocks", middleware.RequireCSRF(), handlers.CourseEditorCreateBlock(d))
+	editor.POST("/blocks/:blockId/autosave", middleware.RequireCSRF(), handlers.CourseEditorAutosaveBlock(d))
+	editor.POST("/transition", middleware.RequireCSRF(), handlers.CourseEditorTransition(d))
+	editor.POST("/publish", middleware.RequireCSRF(), handlers.CourseEditorPublish(d))
+	editor.POST("/unpublish", middleware.RequireCSRF(), handlers.CourseEditorUnpublish(d))
+	editor.POST("/versions/:versionId/restore", middleware.RequireCSRF(), handlers.CourseEditorRestoreVersion(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

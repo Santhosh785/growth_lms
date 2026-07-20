@@ -85,18 +85,18 @@ solid, per the decision below.
 
 | # | Task | Phase | Depends on | Status |
 |---|------|-------|------------|--------|
-| 1 | db-migration | 1 | — | pending |
-| 2 | config-webhook-secret | 1 | — | pending |
-| 3 | permissions-matrix | 1 | — | pending |
-| 4 | csrf-middleware | 1 | — | pending |
-| 5 | models-repositories | 2 | 1 | pending |
-| 6 | media-clients | 2 | 2 | pending |
-| 7 | course-org-middleware | 2 | 1 | pending |
-| 8 | handlers-json-api | 3 | 3, 5, 6, 7 | pending |
-| 9 | worker-jobs | 3 | 5, 6 | pending |
-| 10 | routes-wiring | 4 | 4, 8, 9 | pending |
-| 11 | htmx-course-editor | 4 | 4, 8 | pending |
-| 12 | tests | 5 | 8, 9, 10 | pending |
+| 1 | db-migration | 1 | — | done |
+| 2 | config-webhook-secret | 1 | — | done |
+| 3 | permissions-matrix | 1 | — | done |
+| 4 | csrf-middleware | 1 | — | done |
+| 5 | models-repositories | 2 | 1 | done |
+| 6 | media-clients | 2 | 2 | done |
+| 7 | course-org-middleware | 2 | 1 | done |
+| 8 | handlers-json-api | 3 | 3, 5, 6, 7 | done |
+| 9 | worker-jobs | 3 | 5, 6 | done |
+| 10 | routes-wiring | 4 | 4, 8, 9 | done |
+| 11 | htmx-course-editor | 4 | 4, 8 | done |
+| 12 | tests | 5 | 8, 9, 10 | done |
 
 ## Execution phases
 

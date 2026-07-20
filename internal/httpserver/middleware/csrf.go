@@ -23,19 +23,35 @@ const CSRFCookieName = "lms_csrf"
 // on for any state-changing request.
 const CSRFHeaderName = "X-CSRF-Token"
 
+const csrfTokenContextKey = "csrf_token"
+
+// CSRFTokenFromGin returns the CSRF token in effect for this request
+// (existing cookie value, or the one EnsureCSRFCookie just minted) — for
+// handlers to embed in a page so its forms can echo it back via
+// CSRFHeaderName. A cookie set on the response isn't readable via
+// c.Cookie() within the same request, so EnsureCSRFCookie stashes
+// whichever value is in effect here rather than relying on a re-read.
+func CSRFTokenFromGin(c *gin.Context) string {
+	v, _ := c.Get(csrfTokenContextKey)
+	token, _ := v.(string)
+	return token
+}
+
 // EnsureCSRFCookie issues a new lms_csrf cookie if one isn't already
 // present, so any GET to a course-editor page hands the browser a token
 // it can echo back on subsequent mutations. Safe to call on every request
 // in the HTML route group, including GETs.
 func EnsureCSRFCookie(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := c.Cookie(CSRFCookieName); err != nil {
-			token, genErr := generateCSRFToken()
-			if genErr == nil {
+		token, err := c.Cookie(CSRFCookieName)
+		if err != nil || token == "" {
+			token, err = generateCSRFToken()
+			if err == nil {
 				secure := cfg.Env != config.EnvDevelopment
 				c.SetCookie(CSRFCookieName, token, 0, "/", "", secure, false)
 			}
 		}
+		c.Set(csrfTokenContextKey, token)
 		c.Next()
 	}
 }

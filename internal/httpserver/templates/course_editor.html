@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Edit: {{.Course.Title}}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    .chapter { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .lesson { border-left: 3px solid #999; padding-left: 1rem; margin: 0.75rem 0; }
+    .block { background: #f6f6f6; padding: 0.5rem; margin: 0.5rem 0; border-radius: 4px; }
+    .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    textarea { width: 100%; box-sizing: border-box; }
+  </style>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
+  <h1>{{.Course.Title}} <small>({{.Course.Status}})</small></h1>
+
+  <div class="toolbar">
+    {{if eq .Course.Status "draft"}}
+      <form hx-post="/courses/{{.Course.ID}}/edit/transition" hx-target="body">
+        <input type="hidden" name="status" value="review">
+        <button type="submit">Submit for review</button>
+      </form>
+    {{end}}
+    {{if or (eq .Course.Status "review") (eq .Course.Status "scheduled") (eq .Course.Status "unpublished")}}
+      <form hx-post="/courses/{{.Course.ID}}/edit/publish" hx-target="body" hx-confirm="Publish this course now?">
+        <button type="submit">Publish now</button>
+      </form>
+    {{end}}
+    {{if eq .Course.Status "published"}}
+      <form hx-post="/courses/{{.Course.ID}}/edit/unpublish" hx-target="body" hx-confirm="Unpublish this course?">
+        <button type="submit">Unpublish</button>
+      </form>
+    {{end}}
+    <a href="/api/courses/{{.Course.ID}}/preview" target="_blank"><button type="button">Preview</button></a>
+  </div>
+
+  <h2>Chapters</h2>
+  <form hx-post="/courses/{{.Course.ID}}/edit/chapters" hx-target="body">
+    <input type="text" name="title" placeholder="New chapter title" required>
+    <button type="submit">Add chapter</button>
+  </form>
+
+  {{range .Chapters}}
+  <div class="chapter">
+    <h3>{{.Title}}
+      {{if not .IsFirst}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="up"><button type="submit">&uarr;</button></form>{{end}}
+      {{if not .IsLast}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="down"><button type="submit">&darr;</button></form>{{end}}
+    </h3>
+
+    {{$chapterID := .ID}}
+    {{range .Lessons}}
+    <div class="lesson">
+      <strong>{{.Title}}</strong>
+      {{range .Blocks}}
+      <div class="block">
+        <em>{{.Type}}</em>
+        {{if eq .Type "text"}}
+        <form hx-post="/courses/{{$.Course.ID}}/edit/blocks/{{.ID}}/autosave" hx-trigger="change delay:1s" hx-swap="none">
+          <textarea name="html" rows="3">{{.HTML}}</textarea>
+        </form>
+        {{else}}
+        <span>({{.Type}} block — upload UI not shown in this minimal editor)</span>
+        {{end}}
+      </div>
+      {{end}}
+      <form hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{$chapterID}}/lessons/{{.ID}}/blocks" hx-target="body">
+        <select name="type">
+          <option value="text">Text</option>
+          <option value="image">Image</option>
+          <option value="video">Video</option>
+          <option value="file">File</option>
+          <option value="quiz">Quiz</option>
+        </select>
+        <button type="submit">Add block</button>
+      </form>
+    </div>
+    {{end}}
+
+    <form hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/lessons" hx-target="body">
+      <input type="text" name="title" placeholder="New lesson title" required>
+      <button type="submit">Add lesson</button>
+    </form>
+  </div>
+  {{end}}
+
+  <h2>Version history</h2>
+  <ul>
+    {{range .Versions}}
+    <li>
+      v{{.VersionNumber}} — {{.CreatedAt}}
+      <form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/versions/{{.ID}}/restore" hx-target="body" hx-confirm="Restore this version? This creates a new version, it does not overwrite history.">
+        <button type="submit">Restore</button>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+</body>
+</html>
