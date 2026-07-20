@@ -80,7 +80,7 @@ Go (Gin) backend that both server-renders HTML (HTMX + Tailwind) and exposes a v
 | 2 | Local infrastructure, configuration, and deployment foundation | 2 | 1 | pending |
 | 3 | Authentication, organizations, tenancy, and permissions | 3 | 2 | pending |
 | 4 | Course domain, media, authoring, and publishing | 4 | 3 | done |
-| 5 | Learner portal, player, progress, assessments, and certificates | 5 | 4 | pending |
+| 5 | Learner portal, player, progress, assessments, and certificates | 5 | 4 | done |
 | 6 | Catalog, offers, checkout, payments, entitlements, and admin dashboard | 5 | 3, 4 | pending |
 | 7 | Human-readable plan overview | 6 | 1, 2, 3, 4, 5, 6 | pending |
 
