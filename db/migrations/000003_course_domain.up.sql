@@ -66,7 +66,7 @@ CREATE TABLE courses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
-    description TEXT,
+    description TEXT NOT NULL DEFAULT '',
     cover_image_url TEXT,
     category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'draft'
@@ -316,7 +316,7 @@ CREATE TABLE collections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    description TEXT,
+    description TEXT NOT NULL DEFAULT '',
     created_by UUID NOT NULL REFERENCES profiles(id),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
