@@ -32,6 +32,18 @@ func TestMidpointSortOrder_TriggersRenormalize(t *testing.T) {
 	}
 }
 
+func TestNeedsRenormalize(t *testing.T) {
+	if models.NeedsRenormalize([]float64{1.0, 2.0, 3.0}) {
+		t.Fatal("expected no renormalization needed for whole-number spacing")
+	}
+	if !models.NeedsRenormalize([]float64{1.0, 1.0000000001, 2.0}) {
+		t.Fatal("expected renormalization to be required when a gap is exhausted")
+	}
+	if models.NeedsRenormalize(nil) || models.NeedsRenormalize([]float64{1.0}) {
+		t.Fatal("expected no renormalization needed for 0 or 1 siblings")
+	}
+}
+
 func TestRenormalize(t *testing.T) {
 	got := models.Renormalize(3)
 	want := []float64{1.0, 2.0, 3.0}

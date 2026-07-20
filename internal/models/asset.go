@@ -107,6 +107,21 @@ func (r *AssetRepo) RefreshSignedURL(ctx context.Context, q Querier, id, signedU
 	return scanAsset(row)
 }
 
+// RevokeSignedURLsForCourse clears the cached signed_url/expiry on every
+// asset belonging to a course, called on unpublish so a previously issued
+// long-lived URL can no longer be trusted as still-valid — the next access
+// attempt must go through refresh-url, which re-checks the course's current
+// status.
+func (r *AssetRepo) RevokeSignedURLsForCourse(ctx context.Context, q Querier, courseID string) error {
+	_, err := q.Exec(ctx, `
+		UPDATE assets SET signed_url = NULL, signed_url_expires_at = NULL, updated_at = now()
+		WHERE course_id = $1 AND signed_url IS NOT NULL`, courseID)
+	if err != nil {
+		return fmt.Errorf("models: revoke signed urls for course: %w", err)
+	}
+	return nil
+}
+
 func scanAsset(row pgx.Row) (*Asset, error) {
 	var a Asset
 	if err := row.Scan(&a.ID, &a.OrgID, &a.CourseID, &a.Type, &a.Filename, &a.SizeBytes, &a.MimeType,

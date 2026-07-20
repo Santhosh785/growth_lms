@@ -109,6 +109,23 @@ func AddCourseToCollection(d *AuthDeps) gin.HandlerFunc {
 		tx, _ := middleware.RequestTxFromGin(c)
 		collectionID := c.Param("collectionId")
 
+		// Reject cross-tenant references: a collection may only reference
+		// courses belonging to the same org, even though RLS alone would
+		// still block reading the foreign course's own data afterward.
+		course, err := d.Courses.Get(c.Request.Context(), tx, req.CourseID)
+		if err != nil {
+			if errors.Is(err, models.ErrNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if course.OrgID != oc.OrgID {
+			c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+			return
+		}
+
 		existing, err := d.Collections.ListCourses(c.Request.Context(), tx, collectionID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -170,8 +187,36 @@ func ReorderCollectionCourses(d *AuthDeps) gin.HandlerFunc {
 				return
 			}
 		}
+		if err := renormalizeCollectionCoursesIfNeeded(c, d, collectionID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		c.Status(http.StatusNoContent)
 	}
+}
+
+// renormalizeCollectionCoursesIfNeeded mirrors renormalizeChaptersIfNeeded
+// for courses within a collection.
+func renormalizeCollectionCoursesIfNeeded(c *gin.Context, d *AuthDeps, collectionID string) error {
+	tx, _ := middleware.RequestTxFromGin(c)
+	courses, err := d.Collections.ListCourses(c.Request.Context(), tx, collectionID)
+	if err != nil {
+		return err
+	}
+	values := make([]float64, len(courses))
+	for i, cc := range courses {
+		values[i] = cc.SortOrder
+	}
+	if !models.NeedsRenormalize(values) {
+		return nil
+	}
+	normalized := models.Renormalize(len(courses))
+	for i, cc := range courses {
+		if err := d.Collections.SetCourseSortOrder(c.Request.Context(), tx, collectionID, cc.CourseID, normalized[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func collectionResponse(col *models.Collection) gin.H {

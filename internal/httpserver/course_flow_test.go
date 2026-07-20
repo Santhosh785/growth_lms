@@ -152,6 +152,17 @@ func TestCourseAuthoring_RejectsLearnerAndModerator(t *testing.T) {
 
 		rec = doJSON(t, engine, http.MethodPost, "/api/courses/"+courseID+"/media/upload", token, map[string]string{"filename": "x.png", "type": "image"})
 		require.Equal(t, http.StatusForbidden, rec.Code, "%s must not upload media", role)
+
+		// Read endpoints must also be gated: this course was never
+		// published, and neither role has been granted access via any
+		// enrollment/entitlement mechanism (not built until Task 5/6), so
+		// there is no legitimate way for a learner/moderator org member to
+		// read draft course content or chapters yet.
+		rec = doJSON(t, engine, http.MethodGet, "/api/courses/"+courseID, token, nil)
+		require.Equal(t, http.StatusForbidden, rec.Code, "%s must not read a draft course", role)
+
+		rec = doJSON(t, engine, http.MethodGet, "/api/courses/"+courseID+"/chapters", token, nil)
+		require.Equal(t, http.StatusForbidden, rec.Code, "%s must not list chapters", role)
 	}
 }
 
@@ -194,4 +205,109 @@ func TestCourseTransition_RejectsUndocumentedTransitions(t *testing.T) {
 	var reloaded map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reloaded))
 	require.Equal(t, "draft", reloaded["status"], "rejected transitions must not mutate course status")
+}
+
+// TestReorderChapters_SelfHealsExhaustedPrecision proves the reorder
+// endpoint renormalizes siblings to whole-number spacing in-transaction
+// when a reorder would otherwise leave two chapters' sort_order values
+// closer than NUMERIC(20,10) can usefully distinguish — the spec's
+// "never requires a client-side full-list reorder fallback" guarantee.
+func TestReorderChapters_SelfHealsExhaustedPrecision(t *testing.T) {
+	adminURL := testutil.RequireDB(t)
+	testutil.DB(t)
+	engine, dbPool := newTestEngine(t, adminURL)
+
+	ownerID := uuid.NewString()
+	seedAuthUser(t, dbPool, ownerID, "owner-reorder-"+ownerID+"@example.com")
+	slug := "course-reorder-" + uuid.NewString()
+	token := mintToken(t, ownerID, "owner-reorder@example.com")
+	createTestOrg(t, engine, token, "Reorder Org", slug)
+
+	rec := doJSON(t, engine, http.MethodPost, "/api/courses", token, map[string]string{"org_slug": slug, "title": "Reorder Course"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var course map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &course))
+	courseID := course["id"].(string)
+
+	var chapterIDs []string
+	for i := 0; i < 3; i++ {
+		rec := doJSON(t, engine, http.MethodPost, "/api/courses/"+courseID+"/chapters", token, map[string]string{"title": "Chapter"})
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		var ch map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ch))
+		chapterIDs = append(chapterIDs, ch["id"].(string))
+	}
+
+	// Force two siblings within the renormalization threshold via a
+	// reorder request — as a real drag-drop client repeatedly inserting
+	// midpoints eventually would.
+	rec = doJSON(t, engine, http.MethodPost, "/api/courses/"+courseID+"/chapters/reorder", token, map[string]any{
+		"items": []map[string]any{
+			{"id": chapterIDs[0], "sort_order": 1.0},
+			{"id": chapterIDs[1], "sort_order": 1.00000000001},
+			{"id": chapterIDs[2], "sort_order": 2.0},
+		},
+	})
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+
+	rec = doJSON(t, engine, http.MethodGet, "/api/courses/"+courseID+"/chapters", token, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var listed map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	chapters, ok := listed["chapters"].([]any)
+	require.True(t, ok, "expected a chapters array in response: %s", rec.Body.String())
+	require.Len(t, chapters, 3)
+
+	var sortOrders []float64
+	for _, raw := range chapters {
+		ch := raw.(map[string]any)
+		sortOrders = append(sortOrders, ch["sort_order"].(float64))
+	}
+	require.Equal(t, []float64{1.0, 2.0, 3.0}, sortOrders, "exhausted-precision reorder must self-heal to whole-number spacing")
+}
+
+// TestAddCourseToCollection_RejectsCrossTenantCourse proves a collection
+// cannot be made to reference another org's course, even though RLS alone
+// would still block reading that course's own data afterward — the
+// collection_courses row itself must never be created.
+func TestAddCourseToCollection_RejectsCrossTenantCourse(t *testing.T) {
+	adminURL := testutil.RequireDB(t)
+	testutil.DB(t)
+	engine, dbPool := newTestEngine(t, adminURL)
+
+	ownerAID := uuid.NewString()
+	seedAuthUser(t, dbPool, ownerAID, "owner-cta-"+ownerAID+"@example.com")
+	slugA := "collection-org-a-" + uuid.NewString()
+	tokenA := mintToken(t, ownerAID, "owner-cta-a@example.com")
+	createTestOrg(t, engine, tokenA, "Collection Org A", slugA)
+
+	ownerBID := uuid.NewString()
+	seedAuthUser(t, dbPool, ownerBID, "owner-ctb-"+ownerBID+"@example.com")
+	slugB := "collection-org-b-" + uuid.NewString()
+	tokenB := mintToken(t, ownerBID, "owner-ctb-b@example.com")
+	createTestOrg(t, engine, tokenB, "Collection Org B", slugB)
+
+	// Course belongs to org A.
+	rec := doJSON(t, engine, http.MethodPost, "/api/courses", tokenA, map[string]string{"org_slug": slugA, "title": "Org A Course"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var course map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &course))
+	courseID := course["id"].(string)
+
+	// Collection belongs to org B.
+	rec = doJSON(t, engine, http.MethodPost, "/api/orgs/"+slugB+"/collections", tokenB, map[string]string{"name": "Org B Collection"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var collection map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &collection))
+	collectionID := collection["id"].(string)
+
+	// Org B's owner tries to link org A's course into org B's collection.
+	rec = doJSON(t, engine, http.MethodPost, "/api/orgs/"+slugB+"/collections/"+collectionID+"/courses", tokenB, map[string]string{"course_id": courseID})
+	require.Equal(t, http.StatusNotFound, rec.Code, "cross-tenant course reference must be rejected: %s", rec.Body.String())
+
+	rec = doJSON(t, engine, http.MethodGet, "/api/orgs/"+slugB+"/collections/"+collectionID+"/courses", tokenB, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var listed map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.Empty(t, listed["courses"], "rejected cross-tenant add must not have persisted a collection_courses row")
 }

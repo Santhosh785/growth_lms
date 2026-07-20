@@ -36,6 +36,20 @@ func MidpointSortOrder(before, after float64) (value float64, needsRenormalize b
 	return before + (after-before)/2, false
 }
 
+// NeedsRenormalize reports whether any adjacent gap in a sorted-ascending
+// list of sibling sort_order values has been exhausted to the point that a
+// future midpoint insert (or a reorder pushing two values this close
+// together) would no longer have room — the caller should renormalize the
+// whole set to whole-number spacing in the same transaction.
+func NeedsRenormalize(sortedAscending []float64) bool {
+	for i := 1; i < len(sortedAscending); i++ {
+		if sortedAscending[i]-sortedAscending[i-1] <= renormalizeThreshold {
+			return true
+		}
+	}
+	return false
+}
+
 // Renormalize returns whole-number sort_order values (1.0, 2.0, 3.0, ...)
 // for siblings in the given order, for the caller to persist in one
 // transaction alongside whatever insert/reorder triggered the

@@ -215,8 +215,36 @@ func ReorderBlocks(d *AuthDeps) gin.HandlerFunc {
 				return
 			}
 		}
+		if err := renormalizeBlocksIfNeeded(c, d, c.Param("lessonId")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		c.Status(http.StatusNoContent)
 	}
+}
+
+// renormalizeBlocksIfNeeded mirrors renormalizeChaptersIfNeeded for block
+// siblings within a lesson.
+func renormalizeBlocksIfNeeded(c *gin.Context, d *AuthDeps, lessonID string) error {
+	tx, _ := middleware.RequestTxFromGin(c)
+	blocks, err := d.Blocks.ListByLesson(c.Request.Context(), tx, lessonID)
+	if err != nil {
+		return err
+	}
+	values := make([]float64, len(blocks))
+	for i, b := range blocks {
+		values[i] = b.SortOrder
+	}
+	if !models.NeedsRenormalize(values) {
+		return nil
+	}
+	normalized := models.Renormalize(len(blocks))
+	for i, b := range blocks {
+		if err := d.Blocks.SetSortOrder(c.Request.Context(), tx, b.ID, normalized[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func blockResponse(b *models.Block) gin.H {

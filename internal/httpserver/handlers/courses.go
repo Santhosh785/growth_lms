@@ -318,6 +318,13 @@ func UnpublishCourse(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
+		// Revoke cached signed URLs immediately: a previously issued
+		// long-lived (up to 1hr) published-course URL must not remain
+		// trustable after unpublish, per spec.
+		if err := d.Assets.RevokeSignedURLsForCourse(c.Request.Context(), tx, course.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		c.JSON(http.StatusOK, courseResponse(updated))
 	}
 }

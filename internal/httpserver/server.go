@@ -195,7 +195,7 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	course := authed.Group("/courses/:courseId")
 	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
 
-	course.GET("", handlers.GetCourse(d))
+	course.GET("", authoring, handlers.GetCourse(d))
 	course.PATCH("", authoring, handlers.UpdateCourse(d))
 	course.DELETE("", authoring, handlers.DeleteCourse(d))
 	course.POST("/transition", authoring, handlers.TransitionCourse(d))
@@ -206,26 +206,26 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 
 	course.POST("/tags", authoring, handlers.AddTagToCourse(d))
 	course.DELETE("/tags/:tagId", authoring, handlers.RemoveTagFromCourse(d))
-	course.GET("/tags", handlers.ListCourseTags(d))
+	course.GET("/tags", authoring, handlers.ListCourseTags(d))
 
-	course.GET("/versions", handlers.ListCourseVersions(d))
-	course.GET("/versions/:versionId", handlers.GetCourseVersion(d))
+	course.GET("/versions", authoring, handlers.ListCourseVersions(d))
+	course.GET("/versions/:versionId", authoring, handlers.GetCourseVersion(d))
 	course.POST("/versions/:versionId/restore", authoring, handlers.RestoreCourseVersion(d))
 
 	course.POST("/chapters", authoring, handlers.CreateChapter(d))
-	course.GET("/chapters", handlers.ListChapters(d))
+	course.GET("/chapters", authoring, handlers.ListChapters(d))
 	course.POST("/chapters/reorder", authoring, handlers.ReorderChapters(d))
 	course.PATCH("/chapters/:chapterId", authoring, handlers.UpdateChapter(d))
 	course.DELETE("/chapters/:chapterId", authoring, handlers.DeleteChapter(d))
 
 	course.POST("/chapters/:chapterId/lessons", authoring, handlers.CreateLesson(d))
-	course.GET("/chapters/:chapterId/lessons", handlers.ListLessons(d))
+	course.GET("/chapters/:chapterId/lessons", authoring, handlers.ListLessons(d))
 	course.POST("/chapters/:chapterId/lessons/reorder", authoring, handlers.ReorderLessons(d))
 	course.PATCH("/chapters/:chapterId/lessons/:lessonId", authoring, handlers.UpdateLesson(d))
 	course.DELETE("/chapters/:chapterId/lessons/:lessonId", authoring, handlers.DeleteLesson(d))
 
 	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks", authoring, handlers.CreateBlock(d))
-	course.GET("/chapters/:chapterId/lessons/:lessonId/blocks", handlers.ListBlocks(d))
+	course.GET("/chapters/:chapterId/lessons/:lessonId/blocks", authoring, handlers.ListBlocks(d))
 	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks/reorder", authoring, handlers.ReorderBlocks(d))
 	course.PATCH("/chapters/:chapterId/lessons/:lessonId/blocks/:blockId", authoring, handlers.UpdateBlock(d))
 	course.POST("/chapters/:chapterId/lessons/:lessonId/blocks/:blockId/autosave", authoring, handlers.AutosaveBlock(d))
@@ -234,7 +234,7 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	course.POST("/media/upload/video", authoring, handlers.UploadVideo(d))
 	course.POST("/media/upload", authoring, handlers.UploadFile(d))
 	course.POST("/media/upload/:pendingId/complete", authoring, handlers.UploadFileComplete(d))
-	course.PATCH("/assets/:assetId/refresh-url", handlers.RefreshAssetURL(d))
+	course.PATCH("/assets/:assetId/refresh-url", authoring, handlers.RefreshAssetURL(d))
 
 	// Categories/collections have no course in their path — mounted under
 	// the org-slug group instead, per the noted exception above.

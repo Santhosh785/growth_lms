@@ -128,8 +128,36 @@ func ReorderLessons(d *AuthDeps) gin.HandlerFunc {
 				return
 			}
 		}
+		if err := renormalizeLessonsIfNeeded(c, d, c.Param("chapterId")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		c.Status(http.StatusNoContent)
 	}
+}
+
+// renormalizeLessonsIfNeeded mirrors renormalizeChaptersIfNeeded for
+// lesson siblings within a chapter.
+func renormalizeLessonsIfNeeded(c *gin.Context, d *AuthDeps, chapterID string) error {
+	tx, _ := middleware.RequestTxFromGin(c)
+	lessons, err := d.Lessons.ListByChapter(c.Request.Context(), tx, chapterID)
+	if err != nil {
+		return err
+	}
+	values := make([]float64, len(lessons))
+	for i, l := range lessons {
+		values[i] = l.SortOrder
+	}
+	if !models.NeedsRenormalize(values) {
+		return nil
+	}
+	normalized := models.Renormalize(len(lessons))
+	for i, l := range lessons {
+		if err := d.Lessons.SetSortOrder(c.Request.Context(), tx, l.ID, normalized[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func lessonResponse(lsn *models.Lesson) gin.H {

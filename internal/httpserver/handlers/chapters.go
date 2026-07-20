@@ -141,8 +141,39 @@ func ReorderChapters(d *AuthDeps) gin.HandlerFunc {
 				return
 			}
 		}
+		if err := renormalizeChaptersIfNeeded(c, d, c.Param("courseId")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		c.Status(http.StatusNoContent)
 	}
+}
+
+// renormalizeChaptersIfNeeded self-heals fractional sort_order precision:
+// if the reorder just applied left any two siblings closer than the
+// renormalization threshold, all siblings under the course are rewritten to
+// whole-number spacing in this same transaction (spec: never requires a
+// client-side full-list reorder fallback).
+func renormalizeChaptersIfNeeded(c *gin.Context, d *AuthDeps, courseID string) error {
+	tx, _ := middleware.RequestTxFromGin(c)
+	chapters, err := d.Chapters.ListByCourse(c.Request.Context(), tx, courseID)
+	if err != nil {
+		return err
+	}
+	values := make([]float64, len(chapters))
+	for i, ch := range chapters {
+		values[i] = ch.SortOrder
+	}
+	if !models.NeedsRenormalize(values) {
+		return nil
+	}
+	normalized := models.Renormalize(len(chapters))
+	for i, ch := range chapters {
+		if err := d.Chapters.SetSortOrder(c.Request.Context(), tx, ch.ID, normalized[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func chapterResponse(ch *models.Chapter) gin.H {
