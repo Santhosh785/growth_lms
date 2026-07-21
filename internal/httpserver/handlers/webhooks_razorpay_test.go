@@ -79,19 +79,25 @@ func TestRazorpayWebhook_InvalidSignature_Rejected(t *testing.T) {
 	engine, d, inspector := newRazorpayWebhookTestEngine(t)
 	ctx := context.Background()
 
+	eventID := "evt_" + uuid.NewString()
 	paymentID := "pay_" + uuid.NewString()
 	body := samplePaymentCapturedBody("payment.captured", paymentID, 1700000000)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/razorpay", bytesReader(body))
 	req.Header.Set("X-Razorpay-Signature", "tampered-signature")
-	req.Header.Set("x-razorpay-event-id", "evt_"+uuid.NewString())
+	req.Header.Set("x-razorpay-event-id", eventID)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
 
+	// Scoped to this test's own event ID, not a wildcard 'evt_%' match —
+	// other tests in this file legitimately create their own evt_-prefixed
+	// rows in this shared (uncleaned, per testutil.AdminDB's convention)
+	// test database, so a table-wide LIKE count would false-fail once any
+	// prior test run left rows behind.
 	var count int
-	err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM webhook_events WHERE razorpay_event_id LIKE 'evt_%'`).Scan(&count)
+	err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM webhook_events WHERE razorpay_event_id = $1`, eventID).Scan(&count)
 	require.NoError(t, err)
 	require.Equal(t, 0, count, "invalid signature must not write any webhook_events row")
 
