@@ -16,7 +16,7 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html checkout.html admin_dashboard.html admin_organizations.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html checkout.html admin_dashboard.html admin_organizations.html order_status.html
 var fs embed.FS
 
 // CourseEditor is the parsed course-editor page template (Task 4).
@@ -52,3 +52,10 @@ var AdminDashboard = template.Must(template.ParseFS(fs, "admin_dashboard.html"))
 // AdminOrganizations is the platform-owner cross-organization dashboard
 // page (Task 9 admin-dashboard; handlers.PlatformAdminDashboardPage).
 var AdminOrganizations = template.Must(template.ParseFS(fs, "admin_organizations.html"))
+
+// OrderStatus is the "processing your payment" page a learner's browser
+// lands on after Razorpay's checkout.js success callback (Task 10
+// routes-wiring; handlers.OrderStatusPage/handlers.OrderStatusFragment —
+// see order_status_ui.go). It htmx-polls status-fragment every 2 seconds
+// until an HX-Redirect response carries it into the course.
+var OrderStatus = template.Must(template.ParseFS(fs, "order_status.html"))

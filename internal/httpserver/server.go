@@ -115,22 +115,29 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Payments:      payments.NewRazorpayProvider(cfg.Razorpay),
 		WebhookEvents: models.NewWebhookEventRepo(),
 
-		// Orders/Entitlements/PlatformSettings are needed by this task's
-		// own admin-dashboard routes (registerAdminUIRoutes below); the
-		// remaining Task 6 commerce repos (Offers, DiscountCodes,
-		// InviteTokens, CommercePayments, Refunds, PaymentAuditTrail) are
-		// intentionally left unwired here — their routes aren't
-		// registered yet either, pending task-10's routes-wiring step.
+		// Orders/Entitlements/PlatformSettings back the admin-dashboard
+		// routes (registerAdminUIRoutes below). The remaining Task 6
+		// commerce repos (Offers, DiscountCodes, InviteTokens,
+		// CommercePayments, Refunds, PaymentAuditTrail) back
+		// registerCommerceRoutes below — task-10's routes-wiring step.
 		Orders:           models.NewOrderRepo(),
 		Entitlements:     models.NewEntitlementRepo(),
 		PlatformSettings: models.NewPlatformSettingsRepo(),
+
+		Offers:            models.NewOfferRepo(),
+		DiscountCodes:     models.NewDiscountCodeRepo(),
+		InviteTokens:      models.NewInviteTokenRepo(),
+		CommercePayments:  models.NewPaymentRepo(),
+		Refunds:           models.NewRefundRepo(),
+		PaymentAuditTrail: models.NewPaymentAuditRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
 	registerOrgRoutes(engine, deps, db)
-	registerCourseRoutes(engine, deps, db)
+	registerCourseRoutes(engine, deps, db, redisClient)
 	registerLearnerRoutes(engine, deps, db)
 	registerLearnerUIRoutes(engine, deps, db)
+	registerCommerceRoutes(engine, deps, db, redisClient)
 	registerAdminUIRoutes(engine, deps, db)
 
 	// PUBLIC, unauthenticated certificate verification (Task 5 Stage 6):
@@ -214,7 +221,7 @@ func registerOrgRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Poo
 // have no course to derive org context from, so they nest under
 // /api/orgs/:org_slug/... reusing the existing ResolveOrg group instead —
 // a deliberate, noted exception to the flat-path convention.
-func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool, redisClient *redis.Client) {
 	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
 
 	authed := engine.Group("/api")
@@ -319,7 +326,16 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	// route's only authentication mechanism, by design — see
 	// handlers.RazorpayWebhook's doc comment for the full division of
 	// responsibility between this handler and the Task 8 worker job.
-	engine.POST("/api/webhooks/razorpay", handlers.RazorpayWebhook(d))
+	//
+	// Rate limit: generous (100/min, per client IP) rather than the
+	// auth-route 5-per-15-min shape — Razorpay's own legitimate retry
+	// behavior during an incident must never be throttled into a dropped
+	// event (a dropped webhook means a paying learner never gets their
+	// entitlement). ratelimit.Limiter.Allow fails open on a Redis outage
+	// (see internal/ratelimit/ratelimit.go), so this is a safety margin
+	// on top of the generous limit, not a substitute for it.
+	webhookLimit := ratelimit.New(redisClient, "ratelimit:webhook-razorpay", 100, time.Minute)
+	engine.POST("/api/webhooks/razorpay", middleware.RateLimit(webhookLimit, middleware.ByClientIP), handlers.RazorpayWebhook(d))
 
 	// Lightweight HTMX course-editor UI: cookie-authenticated (the same
 	// session cookie the JSON API's Authenticate middleware already
@@ -433,6 +449,116 @@ func registerLearnerUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 	course.GET("/learn/lessons/:lessonId", entitled, handlers.LessonPlayerPage(d))
 
 	course.GET("/submissions", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.CourseSubmissionsPage(d))
+}
+
+// registerCommerceRoutes mounts Task 6's commerce routes: owner/teacher
+// offer, discount-code, invite-token, and manual-grant management
+// (course-scoped, reusing registerCourseRoutes' /api/courses/:courseId +
+// ResolveCourseOrg convention); the learner-facing checkout page and
+// order-creation endpoint (also course-scoped, since every handler's own
+// doc comment — see commerce_checkout.go — nests them under
+// /api/courses/:courseId/offers/:offerId/checkout, not the flat
+// /checkout/:offerId this task's own doc speculated before the handlers
+// actually landed); the standalone order-status JSON poll endpoint (no
+// course/org in its path, per commerce_checkout.go's OrderStatus doc
+// comment); and the org-scoped refund/revenue-report endpoints (per
+// commerce_refunds.go's RefundOrder and commerce_reports.go's
+// RevenueReport doc comments, both /api/orgs/:org_slug/..., NOT
+// course-scoped as this task's own doc spectulated). It also mounts this
+// task's own new order-status "processing" HTML page and its htmx polling
+// fragment endpoint — see order_status_ui.go.
+//
+// Every RequireRole call below is cross-checked against
+// internal/auth/permissions.go's commerceDomainActions (owner+teacher:
+// offer/discount/invite-token/entitlement-grant management) and
+// ownerOnlyCommerceDomainActions (owner-only: refund.initiate,
+// report.revenue.view). Checkout/order-creation/order-status are
+// deliberately NOT RequireRole-gated — any authenticated org member (or,
+// for order-status, the purchasing learner themself) may reach them, per
+// CheckoutPage/CreateOrder/OrderStatus's own doc comments.
+func registerCommerceRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool, redisClient *redis.Client) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	// Checkout create-order is abuse-prone the same way login/register
+	// are (probing pricing/discount logic, exhausting Razorpay API
+	// quota). Keyed by user ID rather than ByClientIP: this route is
+	// always authenticated (ResolveCourseOrg requires an org member), and
+	// IP-based limiting risks false positives for legitimate buyers
+	// sharing an IP (office/campus NAT, family) more than the auth
+	// routes' pre-authentication login-abuse case does.
+	checkoutLimit := ratelimit.New(redisClient, "ratelimit:checkout-create", 5, 15*time.Minute)
+	checkoutLimitByUser := func(c *gin.Context) string {
+		if ac, ok := middleware.AuthContextFromGin(c); ok {
+			return ac.UserID
+		}
+		return middleware.ByClientIP(c)
+	}
+
+	// Course-scoped commerce management + checkout, reusing the exact
+	// ResolveCourseOrg convention registerCourseRoutes/registerLearnerRoutes
+	// already use — a separate group local to this function, not shared
+	// across functions, matching this codebase's existing style.
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+
+	course.POST("/offers", authoring, handlers.CreateOffer(d))
+	course.GET("/offers", authoring, handlers.ListOffers(d))
+	course.PATCH("/offers/:offerId", authoring, handlers.UpdateOffer(d))
+	course.POST("/offers/:offerId/archive", authoring, handlers.ArchiveOffer(d))
+
+	course.POST("/offers/:offerId/discounts", authoring, handlers.CreateDiscountCode(d))
+	course.GET("/offers/:offerId/discounts", authoring, handlers.ListDiscountCodes(d))
+	course.POST("/offers/:offerId/discounts/:discountId/deactivate", authoring, handlers.DeactivateDiscountCode(d))
+
+	course.POST("/offers/:offerId/invite-tokens", authoring, handlers.CreateInviteToken(d))
+	course.GET("/offers/:offerId/invite-tokens", authoring, handlers.ListInviteTokens(d))
+
+	// Manual, non-payment entitlement grant — owner/teacher, reason
+	// required by the handler itself (see commerce_refunds.go.GrantAccess).
+	course.POST("/grant-access", authoring, handlers.GrantAccess(d))
+
+	// Checkout page + order creation: ResolveCourseOrg only, no RequireRole
+	// — any org member (not staff-gated) may reach these, matching
+	// CheckoutPage/CreateOrder's own doc comments. Only the POST (order
+	// creation) is rate limited.
+	course.GET("/offers/:offerId/checkout", handlers.CheckoutPage(d))
+	course.POST("/offers/:offerId/checkout/order",
+		middleware.RateLimit(checkoutLimit, checkoutLimitByUser),
+		handlers.CreateOrder(d))
+
+	// Order-status JSON poll: no :courseId/:org_slug in its path at all —
+	// see OrderStatus's doc comment for why it resolves the caller's own
+	// order via orders.learner_id = app_current_user_id() rather than any
+	// org-resolving middleware.
+	authed.GET("/orders/:orderId/status", handlers.OrderStatus(d))
+
+	// Org-scoped, owner-only: refunds and revenue visibility. Reuses the
+	// ResolveOrg convention registerOrgRoutes already establishes — a
+	// separate group local to this function.
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	org.POST("/orders/:orderId/refund", middleware.RequireRole(auth.RoleOwner), handlers.RefundOrder(d))
+	org.GET("/reports/revenue", middleware.RequireRole(auth.RoleOwner), handlers.RevenueReport(d))
+
+	// This task's own new UI glue: the order-status "processing" page a
+	// learner's browser lands on after Razorpay's checkout.js handler
+	// navigates them here (see templates/checkout.html), and the htmx
+	// polling fragment it hits every 2 seconds. Cookie-authenticated HTML,
+	// GET-only, no CSRF — matching registerLearnerUIRoutes' precedent
+	// (nothing here POSTs/PATCHes/DELETEs directly). Mounted at the flat
+	// /orders/:orderId/... prefix (no /api) since templates/checkout.html
+	// already navigates to exactly this path on Razorpay's success
+	// callback — see order_status_ui.go's doc comments for the full
+	// design rationale.
+	pages := engine.Group("")
+	pages.Use(middleware.Authenticate(d.Verifier))
+	pages.Use(middleware.WithRequestTx(db))
+	pages.GET("/orders/:orderId/status", handlers.OrderStatusPage(d))
+	pages.GET("/orders/:orderId/status-fragment", handlers.OrderStatusFragment(d))
 }
 
 // registerAdminUIRoutes mounts Task 9's read-only admin dashboard pages:
