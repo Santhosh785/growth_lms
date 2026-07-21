@@ -31,17 +31,12 @@ func newCommerceReportsEngine(t *testing.T, d *AuthDeps) *gin.Engine {
 // TestRevenueReport_RefundReducesNetRevenue covers the revenue-adjustment
 // half of task-11-tests.md gap 4 (payment state transitions): once a
 // paid order's payment succeeds and is then refunded, RevenueReport's
-// net_total for that org/currency must be reduced by the refunded amount.
-//
-// Note on the platform-commission half of that gap's requirement ("the
-// platform commission portion associated with that order is also reduced
-// proportionally"): as commerce_reports.go's sumSucceededRefundsForOrder/
-// RevenueReport is actually implemented, commission_total is always
-// order.CommissionAmount as fixed at order-creation time — it is NEVER
-// reduced by a later refund or chargeback (only net_total is, via the
-// refunded_total subtraction below). This test asserts the ACTUAL
-// behavior rather than the not-implemented proportional-commission
-// reduction; see this task's final report for this finding.
+// net_total AND commission_total for that org/currency must both be
+// reduced proportionally to the refunded amount, per
+// plans/lms-mvp/task-6-commerce.md's "Refunds and chargebacks reduce both
+// the organization's net revenue and the platform's commission
+// proportionally" requirement. This test uses a full refund, so both
+// figures are reduced to zero for this order's contribution.
 func TestRevenueReport_RefundReducesNetRevenue(t *testing.T) {
 	d, pool := commerceTestDeps(t)
 	orgID, courseID, ownerID, learnerID := commerceSeedOrgCourseOfferFixture(t, pool)
@@ -99,12 +94,12 @@ func TestRevenueReport_RefundReducesNetRevenue(t *testing.T) {
 	after := decodeRevenueBucket(t, rec.Body.Bytes(), order.Currency)
 
 	require.InDelta(t, order.Total, after.RefundedTotal, 0.01, "refunded_total must reflect the full succeeded refund")
-	require.InDelta(t, order.Total-order.CommissionAmount-order.Total, after.NetTotal, 0.01, "net_total must be reduced by the refunded amount")
+	require.InDelta(t, 0, after.NetTotal, 0.01, "net_total must be reduced to zero by a full refund")
 	require.Less(t, after.NetTotal, before.NetTotal, "net revenue must decrease after a succeeded refund")
 
-	// Documents the actual (non-proportional) commission behavior: the
-	// commission_total bucket is untouched by the refund.
-	require.InDelta(t, order.CommissionAmount, after.Commission, 0.01, "GAP: commission_total is not reduced by a refund in the current implementation")
+	// A full refund proportionally reduces commission_total to zero too —
+	// the platform's cut of a fully-refunded order is reversed, not kept.
+	require.InDelta(t, 0, after.Commission, 0.01, "commission_total must be proportionally reduced by a full refund")
 }
 
 type revenueBucketView struct {

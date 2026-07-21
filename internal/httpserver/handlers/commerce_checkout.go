@@ -546,6 +546,28 @@ func CreateOrder(d *AuthDeps) gin.HandlerFunc {
 			return
 		}
 
+		// Invite-token consumption cannot be deferred to the webhook the way
+		// discount-code redemption is (DiscountCodeRepo.IncrementRedemption
+		// runs in the worker post-payment): orders carries a
+		// discount_code_id column for the worker to look the code back up
+		// by, but Task 4's schema deliberately has no invite_token_id column
+		// on orders (see task-4-models-repositories.md's orders note), so
+		// the worker has no way to resolve which token gated a given order.
+		// Marking it used here, at order-creation time for BOTH the free and
+		// paid paths, is therefore the only structurally possible point —
+		// this matches Task 1's original schema design note that
+		// invitation-only gating is "enforced entirely by
+		// commerce_invite_tokens.used_at before order creation is even
+		// allowed". The tradeoff (a token is burned even if this paid order
+		// later fails/is abandoned) is accepted as a consequence of that
+		// schema choice, not reconsidered here.
+		if inviteToken != nil {
+			if _, markErr := d.InviteTokens.MarkUsed(ctx, tx, inviteToken.ID, ac.UserID, order.ID); markErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
+		}
+
 		// Exactly order_id/amount/currency/key_id — nothing else, and
 		// NEVER KeySecret/WebhookSecret (see package doc comment).
 		c.JSON(http.StatusOK, gin.H{

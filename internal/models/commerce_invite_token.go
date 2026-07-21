@@ -84,11 +84,17 @@ func (r *InviteTokenRepo) GetByToken(ctx context.Context, q Querier, token strin
 	return it, nil
 }
 
-// MarkUsed sets used_at/used_by_learner_id/used_by_order_id. Call only
-// after the order this token gates has succeeded (same
-// webhook-processing transaction as entitlement creation), not at
-// checkout start, mirroring DiscountCodeRepo.IncrementRedemption's timing
-// rule.
+// MarkUsed sets used_at/used_by_learner_id/used_by_order_id. Unlike
+// DiscountCodeRepo.IncrementRedemption, this is called at order-creation
+// time for BOTH the free and paid checkout paths, not deferred to
+// webhook-confirmed payment success — orders carries a discount_code_id
+// column the webhook worker can look a discount code back up by post-
+// payment, but Task 4's schema deliberately has no invite_token_id column
+// on orders, so there is no way for the worker to resolve which token
+// gated a given order after the fact. Marking it used here is therefore
+// the only structurally possible point; a paid order that later fails or
+// is abandoned still permanently burns the token, an accepted consequence
+// of that schema choice.
 func (r *InviteTokenRepo) MarkUsed(ctx context.Context, q Querier, id, learnerID, orderID string) (*InviteToken, error) {
 	row := q.QueryRow(ctx, `
 		UPDATE commerce_invite_tokens

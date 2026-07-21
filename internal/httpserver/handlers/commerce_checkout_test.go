@@ -597,23 +597,21 @@ func TestCreateOrder_InvitationOnly_Gating(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assertNoEntitlementOrOrder(t, 1) // one order created; still no entitlement (paid path, no webhook yet)
 
-	// GAP: per InviteTokenRepo.MarkUsed's doc comment, a token should be
-	// consumed once its order succeeds — but nothing in this codebase
-	// ever calls MarkUsed for a non-free (paid) invitation_only offer, so
-	// used_at is still NULL here even after a successful checkout-order
-	// creation.
+	// CreateOrder marks the token used at order-creation time for both the
+	// free and paid paths (see CreateOrder's paid-path comment and
+	// InviteTokenRepo.MarkUsed's doc comment) since orders carries no
+	// invite_token_id column the webhook worker could use to defer this to
+	// payment-confirmation time the way discount-code redemption is
+	// deferred.
 	var usedAt *time.Time
 	require.NoError(t, pool.QueryRow(ctx, `SELECT used_at FROM commerce_invite_tokens WHERE token = $1`, realToken).Scan(&usedAt))
-	require.Nil(t, usedAt, "GAP: no code path in this repo currently marks a paid invitation_only offer's invite token as used")
+	require.NotNil(t, usedAt, "a paid invitation_only offer's invite token must be marked used at order-creation time")
 
-	// 4. Reattempting with the SAME token immediately: per the task spec
-	// this should be rejected as already-used. Under this codebase's
-	// CURRENT implementation (see the GAP above) it is NOT rejected,
-	// since the token was never marked used — documented explicitly here
-	// rather than silently asserting the spec's (currently false) claim.
+	// 4. Reattempting with the SAME token immediately must be rejected as
+	// already-used, and must not create a second order.
 	rec = postJSON(t, engine, "/api/courses/"+courseID+"/offers/"+offerID+"/checkout/order", learnerToken, map[string]any{"invite_token": realToken})
-	require.Equal(t, http.StatusOK, rec.Code, "GAP: reuse of the same invite token for a paid invitation_only offer is currently NOT rejected — see MarkUsed gap noted above")
-	assertNoEntitlementOrOrder(t, 2)
+	require.True(t, rec.Code >= 400 && rec.Code < 500, "reuse of an already-used invite token must be rejected 4xx, got %d: %s", rec.Code, rec.Body.String())
+	assertNoEntitlementOrOrder(t, 1)
 
 	// 5. A token whose expiry is in the past IS correctly rejected,
 	// regardless of offer type — this part of the gate works correctly.
@@ -624,5 +622,5 @@ func TestCreateOrder_InvitationOnly_Gating(t *testing.T) {
 
 	rec = postJSON(t, engine, "/api/courses/"+courseID+"/offers/"+offerID+"/checkout/order", learnerToken, map[string]any{"invite_token": expiredToken})
 	require.True(t, rec.Code >= 400 && rec.Code < 500, "checkout with an expired invite token must be rejected 4xx, got %d: %s", rec.Code, rec.Body.String())
-	assertNoEntitlementOrOrder(t, 2)
+	assertNoEntitlementOrOrder(t, 1)
 }

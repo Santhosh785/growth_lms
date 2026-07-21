@@ -145,10 +145,22 @@ func RevenueReport(d *AuthDeps) gin.HandlerFunc {
 				buckets[order.Currency] = bucket
 			}
 
-			netContribution := order.Total - order.CommissionAmount - refundedTotal
+			// Per plans/lms-mvp/task-6-commerce.md's "Platform monetization"
+			// section: "Refunds and chargebacks reduce both the
+			// organization's net revenue and the platform's commission
+			// proportionally" — a full refund (the only kind RefundOrder
+			// currently creates, see its doc comment) zeroes both; a
+			// hypothetical future partial refund would zero out the
+			// matching proportion of commission rather than leaving it at
+			// its full pre-refund value.
+			effectiveCommission := order.CommissionAmount
+			if order.Total > 0 {
+				effectiveCommission = order.CommissionAmount * (1 - refundedTotal/order.Total)
+			}
+			netContribution := order.Total - refundedTotal - effectiveCommission
 
 			bucket.GrossTotal += order.Total
-			bucket.Commission += order.CommissionAmount
+			bucket.Commission += effectiveCommission
 			bucket.RefundedTotal += refundedTotal
 			bucket.NetTotal += netContribution
 			bucket.OrderCount++
@@ -159,7 +171,7 @@ func RevenueReport(d *AuthDeps) gin.HandlerFunc {
 				bucket.ByCourse[offer.CourseID] = courseRow
 			}
 			courseRow.GrossTotal += order.Total
-			courseRow.Commission += order.CommissionAmount
+			courseRow.Commission += effectiveCommission
 			courseRow.RefundedTotal += refundedTotal
 			courseRow.NetTotal += netContribution
 			courseRow.OrderCount++
@@ -170,7 +182,7 @@ func RevenueReport(d *AuthDeps) gin.HandlerFunc {
 				bucket.ByOfferType[offer.Type] = offerTypeRow
 			}
 			offerTypeRow.GrossTotal += order.Total
-			offerTypeRow.Commission += order.CommissionAmount
+			offerTypeRow.Commission += effectiveCommission
 			offerTypeRow.RefundedTotal += refundedTotal
 			offerTypeRow.NetTotal += netContribution
 			offerTypeRow.OrderCount++
