@@ -93,6 +93,20 @@ func (r *PaymentRepo) GetByOrderID(ctx context.Context, q Querier, orderID strin
 	return payment, nil
 }
 
+// GetByRazorpayPaymentID looks up the payment row matching a Razorpay
+// payment-entity ID — used by the Task 8 worker's refund/dispute
+// processing, which is handed a payment_id (not an order_id) in those
+// webhook payloads. Returns ErrNotFound if no payment row has this
+// Razorpay payment ID recorded yet.
+func (r *PaymentRepo) GetByRazorpayPaymentID(ctx context.Context, q Querier, razorpayPaymentID string) (*Payment, error) {
+	row := q.QueryRow(ctx, `SELECT `+paymentColumns+` FROM payments WHERE razorpay_payment_id = $1`, razorpayPaymentID)
+	payment, err := scanPayment(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get payment by razorpay payment id: %w", err)
+	}
+	return payment, nil
+}
+
 func scanPayment(row pgx.Row) (*Payment, error) {
 	var p Payment
 	if err := row.Scan(&p.ID, &p.OrgID, &p.OrderID, &p.RazorpayPaymentID, &p.Status, &p.RawProviderData,

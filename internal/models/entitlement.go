@@ -91,6 +91,21 @@ func (r *EntitlementRepo) Get(ctx context.Context, q Querier, id string) (*Entit
 	return out, nil
 }
 
+// GetByOrderID returns the entitlement created for a given order, or
+// ErrNotFound if the order never succeeded (or predates entitlements
+// entirely). Used by the Task 8 worker's refund/dispute-lost processing
+// to find the entitlement to revoke — payment.captured processing creates
+// at most one entitlement per order, so this is a single-row lookup, not
+// a list.
+func (r *EntitlementRepo) GetByOrderID(ctx context.Context, q Querier, orderID string) (*Entitlement, error) {
+	row := q.QueryRow(ctx, `SELECT `+entitlementColumns+` FROM entitlements WHERE order_id = $1`, orderID)
+	out, err := scanEntitlement(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get entitlement by order id: %w", err)
+	}
+	return out, nil
+}
+
 // ListByLearner returns every entitlement a learner holds, most recently
 // created first.
 func (r *EntitlementRepo) ListByLearner(ctx context.Context, q Querier, learnerID string) ([]*Entitlement, error) {
@@ -128,6 +143,23 @@ func (r *EntitlementRepo) Revoke(ctx context.Context, q Querier, id string) (*En
 	out, err := scanEntitlement(row)
 	if err != nil {
 		return nil, fmt.Errorf("models: revoke entitlement: %w", err)
+	}
+	return out, nil
+}
+
+// Expire sets status = 'expired', updated_at = now(). Called by the
+// expire-entitlements sweep worker job (Task 8) when a fixed-term
+// entitlement's expires_at has passed; does not itself touch
+// learner_course_access — the caller updates that row too, in the same
+// transaction, same relationship documented on Revoke above.
+func (r *EntitlementRepo) Expire(ctx context.Context, q Querier, id string) (*Entitlement, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE entitlements SET status = 'expired', updated_at = now()
+		WHERE id = $1
+		RETURNING `+entitlementColumns, id)
+	out, err := scanEntitlement(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: expire entitlement: %w", err)
 	}
 	return out, nil
 }

@@ -29,6 +29,10 @@ const (
 // delayed-task bookkeeping.
 const publishSweepInterval = time.Minute
 
+// abandonOrdersSweepInterval and expireEntitlementsSweepInterval are
+// defined in orders.go/entitlements.go respectively (Task 8), following
+// this same const-per-sweep precedent.
+
 // Run starts the asynq server and blocks until it shuts down or ctx is
 // canceled. redisAddr/opts come from cfg.Redis.URL parsed by the caller.
 func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) error {
@@ -55,16 +59,27 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 	profiles := models.NewProfileRepo()
 	emailClient := notify.NewResendClient(cfg.Resend)
 
+	// Task 8's payment.captured handler enqueues a receipt-email task
+	// from within a task handler, which needs its own asynq.Client (the
+	// server above only consumes) — same producer/consumer split
+	// tasks.go's NewClient documents for the HTTP server process.
+	asyncClient := NewClient(redisOpt)
+	defer asyncClient.Close()
+
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(TypeBunnyTranscodeComplete, handleBunnyTranscodeComplete(pool))
 	mux.HandleFunc(TypeNotifyAssignmentGraded, handleNotifyAssignmentGraded(pool, profiles, emailClient))
 	mux.HandleFunc(TypeNotifyCertificateIssued, handleNotifyCertificateIssued(pool, profiles, emailClient))
 	mux.HandleFunc(TypeNotifyCourseAnnouncement, handleNotifyCourseAnnouncement(pool, profiles, emailClient))
 	mux.HandleFunc(TypeNotifyCourseReminder, handleNotifyCourseReminder(pool, profiles, emailClient))
+	mux.HandleFunc(TypeRazorpayWebhook, handleRazorpayWebhook(pool, asyncClient, logger))
+	mux.HandleFunc(TypeSendReceiptEmail, handleSendReceiptEmail(pool, profiles, emailClient))
 
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	defer cancelSweep()
 	go runPublishSweepLoop(sweepCtx, pool, logger, publishSweepInterval)
+	go runAbandonOrdersSweepLoop(sweepCtx, pool, logger, abandonOrdersSweepInterval)
+	go runExpireEntitlementsSweepLoop(sweepCtx, pool, logger, expireEntitlementsSweepInterval)
 
 	logger.Info("worker starting", "env", cfg.Env)
 	return srv.Run(mux)

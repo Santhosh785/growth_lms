@@ -69,6 +69,20 @@ func (r *LearnerCourseAccessRepo) SetStatus(ctx context.Context, q Querier, id, 
 	return scanLearnerCourseAccess(row)
 }
 
+// SetEntitlementAndStatus repoints an existing access row at a new
+// entitlement (e.g. a learner re-purchasing after a prior entitlement
+// expired/was revoked) and sets access_status in the same UPDATE — used
+// by the Task 8 worker's payment.captured processing when a
+// learner_course_access row already exists for this (learner, course)
+// pair, so the new purchase's entitlement becomes the one access checks
+// resolve through, without needing a second query to also flip status.
+func (r *LearnerCourseAccessRepo) SetEntitlementAndStatus(ctx context.Context, q Querier, id string, entitlementID *string, status string) (*LearnerCourseAccess, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE learner_course_access SET entitlement_id = $2, access_status = $3
+		WHERE id = $1 RETURNING `+learnerCourseAccessColumns, id, entitlementID, status)
+	return scanLearnerCourseAccess(row)
+}
+
 // ListActiveLearnerIDsByCourse returns the learner_id of every row with
 // access_status='active' for courseID — used by the course-announcement
 // handler to fan out one course-announcement-posted notification job per

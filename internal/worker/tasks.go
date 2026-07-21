@@ -15,6 +15,11 @@ const (
 	TypeBunnyTranscodeComplete = "bunny:transcode_complete"
 	TypeSweepScheduledPublish  = "course:sweep_scheduled_publish"
 	TypeRazorpayWebhook        = "razorpay:webhook"
+	// TypeSendReceiptEmail is Task 8's transactional payment-receipt
+	// email, enqueued only from within the TypeRazorpayWebhook
+	// payment.captured handler (see payments.go) after the order/payment/
+	// entitlement transaction has committed.
+	TypeSendReceiptEmail = "payments:send_receipt_email"
 )
 
 // BunnyTranscodeCompletePayload is enqueued by the (already

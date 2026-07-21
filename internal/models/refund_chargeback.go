@@ -118,6 +118,21 @@ func (r *RefundRepo) GetByPaymentID(ctx context.Context, q Querier, paymentID st
 	return out, rows.Err()
 }
 
+// GetByRazorpayRefundID looks up the refund row matching a Razorpay
+// refund-entity ID — used by the Task 8 worker's refund.processed/
+// refund.failed processing to find the refund row an in-app refund action
+// already created (in 'pending' status). Returns ErrNotFound if none
+// exists, which the caller treats as "this refund was initiated from the
+// Razorpay dashboard, not this app" and creates a new row instead.
+func (r *RefundRepo) GetByRazorpayRefundID(ctx context.Context, q Querier, razorpayRefundID string) (*Refund, error) {
+	row := q.QueryRow(ctx, `SELECT `+refundColumns+` FROM refunds WHERE razorpay_refund_id = $1`, razorpayRefundID)
+	out, err := scanRefund(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get refund by razorpay refund id: %w", err)
+	}
+	return out, nil
+}
+
 func scanRefund(row pgx.Row) (*Refund, error) {
 	var rf Refund
 	if err := row.Scan(&rf.ID, &rf.OrgID, &rf.PaymentID, &rf.RazorpayRefundID, &rf.Status, &rf.Amount,
@@ -168,6 +183,24 @@ func (r *ChargebackRepo) UpdateStatus(ctx context.Context, q Querier, id, status
 	out, err := scanChargeback(row)
 	if err != nil {
 		return nil, fmt.Errorf("models: update chargeback status: %w", err)
+	}
+	return out, nil
+}
+
+// GetLatestByPaymentID returns the most recently created chargeback for a
+// payment, or ErrNotFound if the payment has never been disputed — used
+// by the Task 8 worker's dispute-event processing to find (or discover
+// the absence of) an existing chargeback row before deciding whether to
+// create one (dispute opened) or update one (dispute won/lost).
+func (r *ChargebackRepo) GetLatestByPaymentID(ctx context.Context, q Querier, paymentID string) (*Chargeback, error) {
+	row := q.QueryRow(ctx, `
+		SELECT `+chargebackColumns+` FROM chargebacks
+		WHERE payment_id = $1
+		ORDER BY created_at DESC LIMIT 1
+	`, paymentID)
+	out, err := scanChargeback(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get latest chargeback by payment id: %w", err)
 	}
 	return out, nil
 }

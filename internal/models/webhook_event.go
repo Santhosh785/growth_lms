@@ -2,8 +2,11 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // webhook_events has no org_id and is not RLS-scoped the way every other
@@ -47,6 +50,39 @@ func (r *WebhookEventRepo) TryRecord(ctx context.Context, q Querier, razorpayEve
 		return false, fmt.Errorf("models: try record webhook event: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// GetByPayload looks up the webhook_events row whose payload bytes match
+// exactly. This is the lookup the Task 8 worker job uses for its
+// idempotency check: worker.RazorpayWebhookPayload (deliberately) carries
+// only EventType and the raw Payload bytes, not the razorpay_event_id
+// TryRecord computed at the HTTP layer (the real x-razorpay-event-id
+// header never reaches the worker — only the request body does), so the
+// worker cannot recompute the same dedup key TryRecord used. What it CAN
+// do is look up the exact same row by the exact same raw bytes it was
+// handed, since RazorpayWebhook forwards the identical `body` it already
+// passed to TryRecord. JSONB equality compares the parsed structure (not
+// raw text), so this is robust to any whitespace/key-order differences a
+// re-marshal might introduce, and reliable because both sides originate
+// from the same byte slice. Returns ErrNotFound if no row matches (should
+// not normally happen, since the HTTP handler always calls TryRecord
+// before enqueueing) — most-recent match wins in the pathological case of
+// two structurally-identical payloads.
+func (r *WebhookEventRepo) GetByPayload(ctx context.Context, q Querier, payload []byte) (*WebhookEvent, error) {
+	row := q.QueryRow(ctx, `
+		SELECT id, razorpay_event_id, event_type, payload, processed_at, created_at
+		FROM webhook_events
+		WHERE payload = $1::jsonb
+		ORDER BY created_at DESC LIMIT 1
+	`, payload)
+	var w WebhookEvent
+	if err := row.Scan(&w.ID, &w.RazorpayEventID, &w.EventType, &w.Payload, &w.ProcessedAt, &w.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("models: get webhook event by payload: %w", err)
+	}
+	return &w, nil
 }
 
 // MarkProcessed sets processed_at = now() for a recorded webhook event,

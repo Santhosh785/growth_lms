@@ -109,13 +109,29 @@ func (r *OrderRepo) UpdateStatus(ctx context.Context, q Querier, id, status stri
 	return order, nil
 }
 
-// ListPendingOlderThan returns every order still 'pending' whose
-// created_at is older than now()-cutoff — used by the abandon-sweep
-// worker job (Task 8) to find orders to flip to 'abandoned'.
+// GetByRazorpayOrderID looks up the order that matches a Razorpay
+// order-entity ID from a payment webhook payload — the Task 8 worker's
+// entry point for resolving which order a payment.captured/payment.failed
+// event belongs to. Returns ErrNotFound if no order was ever created with
+// this Razorpay order ID.
+func (r *OrderRepo) GetByRazorpayOrderID(ctx context.Context, q Querier, razorpayOrderID string) (*Order, error) {
+	row := q.QueryRow(ctx, `SELECT `+orderColumns+` FROM orders WHERE razorpay_order_id = $1`, razorpayOrderID)
+	order, err := scanOrder(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get order by razorpay order id: %w", err)
+	}
+	return order, nil
+}
+
+// ListPendingOlderThan returns every order still 'pending' or
+// 'payment_initiated' whose created_at is older than now()-cutoff — used
+// by the abandon-sweep worker job (Task 8) to find orders to flip to
+// 'abandoned'. An order that already reached a terminal status
+// (succeeded/failed/abandoned) never matches, regardless of age.
 func (r *OrderRepo) ListPendingOlderThan(ctx context.Context, q Querier, cutoff time.Duration) ([]*Order, error) {
 	rows, err := q.Query(ctx, `
 		SELECT `+orderColumns+` FROM orders
-		WHERE status = 'pending' AND created_at < now() - $1::interval
+		WHERE status IN ('pending', 'payment_initiated') AND created_at < now() - $1::interval
 	`, fmt.Sprintf("%d seconds", int(cutoff.Seconds())))
 	if err != nil {
 		return nil, fmt.Errorf("models: list pending orders older than cutoff: %w", err)
