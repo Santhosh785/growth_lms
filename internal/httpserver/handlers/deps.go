@@ -57,6 +57,15 @@ type AuthDeps struct {
 	Announcements         *models.CourseAnnouncementRepo
 
 	// Task 6: commerce.
-	Payments      payments.Provider
-	WebhookEvents *models.WebhookEventRepo
+	Payments          payments.Provider
+	WebhookEvents     *models.WebhookEventRepo
+	Offers            *models.OfferRepo
+	DiscountCodes     *models.DiscountCodeRepo
+	InviteTokens      *models.InviteTokenRepo
+	Orders            *models.OrderRepo
+	Entitlements      *models.EntitlementRepo
+	CommercePayments  *models.PaymentRepo
+	Refunds           *models.RefundRepo
+	PaymentAuditTrail *models.PaymentAuditRepo
+	PlatformSettings  *models.PlatformSettingsRepo
 }

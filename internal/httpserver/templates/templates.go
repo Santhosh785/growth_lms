@@ -13,7 +13,7 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html checkout.html
 var fs embed.FS
 
 // CourseEditor is the parsed course-editor page template (Task 4).
@@ -34,3 +34,7 @@ var Submissions = template.Must(template.ParseFS(fs, "submissions.html"))
 // CertificateVerify is the public certificate-verification HTML page
 // (Task 5 Stage 8; the JSON API sibling is handlers.VerifyCertificate).
 var CertificateVerify = template.Must(template.ParseFS(fs, "certificate_verify.html"))
+
+// Checkout is the learner-facing checkout page (Task 6 commerce-handlers;
+// the JSON API siblings are handlers.CreateOrder/handlers.OrderStatus).
+var Checkout = template.Must(template.ParseFS(fs, "checkout.html"))

@@ -109,6 +109,39 @@ func (r *OrderRepo) UpdateStatus(ctx context.Context, q Querier, id, status stri
 	return order, nil
 }
 
+// AttachRazorpayOrder sets razorpay_order_id and status (e.g.
+// 'payment_initiated') in one UPDATE, for the paid-checkout path
+// immediately after Provider.CreateOrder returns a Razorpay order ID.
+// Added by Task 6 (commerce-handlers): OrderRepo.Create/UpdateStatus
+// alone give no way to attach the Razorpay order id after the initial
+// insert.
+func (r *OrderRepo) AttachRazorpayOrder(ctx context.Context, q Querier, id, razorpayOrderID, status string) (*Order, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE orders SET razorpay_order_id = $2, status = $3, updated_at = now()
+		WHERE id = $1
+		RETURNING `+orderColumns, id, razorpayOrderID, status)
+	order, err := scanOrder(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: attach razorpay order: %w", err)
+	}
+	return order, nil
+}
+
+// CountByOfferAndStatus counts orders for an offer currently in status —
+// used by the cohort-offer seat-cap check (create-order/checkout-page
+// handlers) to compare against offers.max_seats. Added by Task 6
+// (commerce-handlers); counts orders rather than entitlements because a
+// cohort seat is considered claimed the moment a successful order exists
+// for it, mirroring how this file already treats "succeeded" as the
+// terminal payment-success state.
+func (r *OrderRepo) CountByOfferAndStatus(ctx context.Context, q Querier, offerID, status string) (int, error) {
+	var count int
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM orders WHERE offer_id = $1 AND status = $2`, offerID, status).Scan(&count); err != nil {
+		return 0, fmt.Errorf("models: count orders by offer and status: %w", err)
+	}
+	return count, nil
+}
+
 // GetByRazorpayOrderID looks up the order that matches a Razorpay
 // order-entity ID from a payment webhook payload — the Task 8 worker's
 // entry point for resolving which order a payment.captured/payment.failed

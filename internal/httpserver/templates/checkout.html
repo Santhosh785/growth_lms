@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkout — {{.Course.Title}}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    .row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+    .total { font-weight: bold; border-top: 1px solid #ccc; margin-top: 0.5rem; padding-top: 0.5rem; }
+    .banner { background: #fee; border: 1px solid #c33; border-radius: 6px; padding: 0.75rem; margin: 1rem 0; color: #922; }
+    button { cursor: pointer; padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Checkout</h1>
+  <p>{{.Course.Title}}</p>
+
+  {{if .BlockedMessage}}
+  <div class="banner">{{.BlockedMessage}}</div>
+  {{end}}
+  {{if .DiscountError}}
+  <div class="banner">{{.DiscountError}}</div>
+  {{end}}
+
+  <div class="row"><span>Subtotal</span><span>{{.Subtotal}} {{.Offer.Currency}}</span></div>
+  <div class="row"><span>Discount</span><span>-{{.Discount}} {{.Offer.Currency}}</span></div>
+  <div class="row"><span>Tax</span><span>{{.Tax}} {{.Offer.Currency}}</span></div>
+  <div class="row total"><span>Total</span><span>{{.Total}} {{.Offer.Currency}}</span></div>
+
+  {{if .Purchasable}}
+  <button type="button" id="checkout-btn" onclick="startCheckout()">Pay {{.Total}} {{.Offer.Currency}}</button>
+  <p id="checkout-error" style="color:#c33"></p>
+
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script>
+    async function startCheckout() {
+      var errEl = document.getElementById("checkout-error");
+      errEl.textContent = "";
+
+      var body = {};
+      {{if .InviteToken}}body.invite_token = {{.InviteToken}};{{end}}
+
+      var res = await fetch(window.location.pathname + "/order", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        errEl.textContent = data.error || "Checkout failed.";
+        return;
+      }
+
+      // Free offers skip Razorpay entirely — the server already created
+      // the entitlement, so just navigate straight into the course.
+      if (data.free) {
+        window.location.href = data.redirect_url;
+        return;
+      }
+
+      // Razorpay's checkout.js widget. Its client-side success callback
+      // is UI convenience only — it is NEVER treated as proof of payment
+      // (see internal/payments.Provider.VerifyPaymentSignature's doc
+      // comment). The only thing the callback does is navigate to the
+      // order-status polling page, which reports state the server-to-
+      // server webhook has already verified and persisted.
+      var options = {
+        key: {{.RazorpayKeyID}},
+        order_id: data.order_id,
+        amount: Math.round(data.amount * 100),
+        currency: data.currency,
+        handler: function (response) {
+          window.location.href = "/orders/" + data.order_id + "/status";
+        }
+      };
+      var rzp = new Razorpay(options);
+      rzp.open();
+    }
+  </script>
+  {{end}}
+</body>
+</html>

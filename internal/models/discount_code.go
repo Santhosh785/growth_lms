@@ -65,6 +65,57 @@ func (r *DiscountCodeRepo) Create(ctx context.Context, q Querier, d DiscountCode
 	return dc, nil
 }
 
+// Get returns a single discount code by ID, or ErrNotFound. Added by
+// Task 6 (commerce-handlers) for the deactivate endpoint, which is handed
+// a :discountId path param rather than an offer+code pair.
+func (r *DiscountCodeRepo) Get(ctx context.Context, q Querier, id string) (*DiscountCode, error) {
+	row := q.QueryRow(ctx, `SELECT `+discountCodeColumns+` FROM discount_codes WHERE id = $1`, id)
+	dc, err := scanDiscountCode(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: get discount code: %w", err)
+	}
+	return dc, nil
+}
+
+// ListByOffer returns every discount code for an offer, most recently
+// created first. Added by Task 6 (commerce-handlers) for the
+// GET .../offers/:offerId/discounts listing endpoint.
+func (r *DiscountCodeRepo) ListByOffer(ctx context.Context, q Querier, offerID string) ([]*DiscountCode, error) {
+	rows, err := q.Query(ctx, `SELECT `+discountCodeColumns+` FROM discount_codes WHERE offer_id = $1 ORDER BY created_at DESC`, offerID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list discount codes by offer: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*DiscountCode
+	for rows.Next() {
+		dc, err := scanDiscountCodeRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, dc)
+	}
+	return out, rows.Err()
+}
+
+// Deactivate stops future redemptions of a code by setting expires_at to
+// now() (in the past the instant this returns), per this struct's doc
+// comment: there is no separate status column, so "deactivated" is
+// represented as "already expired". Does not affect orders that already
+// redeemed it (RedemptionCount/prior redemptions are untouched). Added by
+// Task 6 (commerce-handlers).
+func (r *DiscountCodeRepo) Deactivate(ctx context.Context, q Querier, id string) (*DiscountCode, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE discount_codes SET expires_at = now()
+		WHERE id = $1
+		RETURNING `+discountCodeColumns, id)
+	dc, err := scanDiscountCode(row)
+	if err != nil {
+		return nil, fmt.Errorf("models: deactivate discount code: %w", err)
+	}
+	return dc, nil
+}
+
 // GetByCode looks up a discount code scoped to a single offer — a code
 // string is only unique within its offer, so callers must always know
 // which offer they're checking out. Returns ErrNotFound if no row
@@ -115,6 +166,15 @@ func scanDiscountCode(row pgx.Row) (*DiscountCode, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
+		return nil, fmt.Errorf("models: scan discount code: %w", err)
+	}
+	return &d, nil
+}
+
+func scanDiscountCodeRows(rows pgx.Rows) (*DiscountCode, error) {
+	var d DiscountCode
+	if err := rows.Scan(&d.ID, &d.OrgID, &d.OfferID, &d.Code, &d.DiscountType, &d.Value, &d.ExpiresAt,
+		&d.MaxRedemptions, &d.RedemptionCount, &d.CreatedBy, &d.CreatedAt); err != nil {
 		return nil, fmt.Errorf("models: scan discount code: %w", err)
 	}
 	return &d, nil

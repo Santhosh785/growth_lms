@@ -102,6 +102,32 @@ func (r *InviteTokenRepo) MarkUsed(ctx context.Context, q Querier, id, learnerID
 	return it, nil
 }
 
+// ListByOffer returns every invite token issued for an offer (used and
+// unused), most recently created first. Added by Task 6
+// (commerce-handlers) for the GET .../offers/:offerId/invite-tokens
+// listing endpoint — callers must not re-expose the Token field for
+// already-issued rows, per that endpoint's doc comment; this repo method
+// returns the full row (including Token) purely because that's the
+// simplest scan to write, the redaction is the handler's responsibility.
+func (r *InviteTokenRepo) ListByOffer(ctx context.Context, q Querier, offerID string) ([]*InviteToken, error) {
+	rows, err := q.Query(ctx, `SELECT `+inviteTokenColumns+` FROM commerce_invite_tokens WHERE offer_id = $1 ORDER BY created_at DESC`, offerID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list invite tokens by offer: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*InviteToken
+	for rows.Next() {
+		var it InviteToken
+		if err := rows.Scan(&it.ID, &it.OrgID, &it.OfferID, &it.Token, &it.BoundEmail, &it.UsedAt,
+			&it.UsedByLearnerID, &it.UsedByOrderID, &it.ExpiresAt, &it.CreatedBy, &it.CreatedAt); err != nil {
+			return nil, fmt.Errorf("models: scan invite token: %w", err)
+		}
+		out = append(out, &it)
+	}
+	return out, rows.Err()
+}
+
 func scanInviteToken(row pgx.Row) (*InviteToken, error) {
 	var it InviteToken
 	if err := row.Scan(&it.ID, &it.OrgID, &it.OfferID, &it.Token, &it.BoundEmail, &it.UsedAt,
