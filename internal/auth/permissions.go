@@ -34,15 +34,37 @@ var ownerOnlyCourseDomainActions = []string{
 	"category.create", "category.update", "category.delete",
 }
 
+// commerceDomainActions are the Task 6 commerce authoring actions granted to
+// both RoleOwner and RoleTeacher — mirrors courseDomainActions' owner/teacher
+// split above.
+var commerceDomainActions = []string{
+	"offer.create", "offer.update", "offer.archive",
+	"discount.create", "discount.update", "discount.archive",
+	"invitetoken.create", "entitlement.grant",
+}
+
+// ownerOnlyCommerceDomainActions are commerce actions restricted to
+// RoleOwner: refunds and org-level financial visibility are owner-only,
+// unlike the creator-facing offer/discount management above.
+//
+// Note: platform-commission-config and the platform-owner cross-org
+// dashboard are NOT represented here — those are enforced via
+// RequirePlatformOwner (profiles.is_platform_owner), not this org-role
+// matrix, since they are not scoped to any single organization's roles.
+var ownerOnlyCommerceDomainActions = []string{
+	"refund.initiate", "dashboard.org.view", "report.revenue.view",
+}
+
 var permissionMatrix = map[string][]string{
-	RoleOwner: append(append([]string{
+	RoleOwner: append(append(append(append([]string{
 		"org.update", "org.delete",
 		"member.invite", "member.role.change", "member.remove",
 		"apitoken.create", "apitoken.revoke",
 	}, courseDomainActions...), ownerOnlyCourseDomainActions...),
-	RoleTeacher: append([]string{
+		commerceDomainActions...), ownerOnlyCommerceDomainActions...),
+	RoleTeacher: append(append([]string{
 		"member.invite",
-	}, courseDomainActions...),
+	}, courseDomainActions...), commerceDomainActions...),
 	RoleModerator: {
 		"member.invite",
 	},
