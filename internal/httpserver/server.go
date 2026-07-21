@@ -114,6 +114,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 
 		Payments:      payments.NewRazorpayProvider(cfg.Razorpay),
 		WebhookEvents: models.NewWebhookEventRepo(),
+
+		// Orders/Entitlements/PlatformSettings are needed by this task's
+		// own admin-dashboard routes (registerAdminUIRoutes below); the
+		// remaining Task 6 commerce repos (Offers, DiscountCodes,
+		// InviteTokens, CommercePayments, Refunds, PaymentAuditTrail) are
+		// intentionally left unwired here — their routes aren't
+		// registered yet either, pending task-10's routes-wiring step.
+		Orders:           models.NewOrderRepo(),
+		Entitlements:     models.NewEntitlementRepo(),
+		PlatformSettings: models.NewPlatformSettingsRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
@@ -121,6 +131,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerCourseRoutes(engine, deps, db)
 	registerLearnerRoutes(engine, deps, db)
 	registerLearnerUIRoutes(engine, deps, db)
+	registerAdminUIRoutes(engine, deps, db)
 
 	// PUBLIC, unauthenticated certificate verification (Task 5 Stage 6):
 	// mounted directly on the engine, no Authenticate/WithRequestTx at
@@ -422,6 +433,34 @@ func registerLearnerUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 	course.GET("/learn/lessons/:lessonId", entitled, handlers.LessonPlayerPage(d))
 
 	course.GET("/submissions", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.CourseSubmissionsPage(d))
+}
+
+// registerAdminUIRoutes mounts Task 9's read-only admin dashboard pages:
+// the org-scoped dashboard (reusing the ResolveOrg middleware chain, same
+// construction as registerOrgRoutes' JSON group above, mounted at the
+// top level rather than under /api since this is an HTML page —
+// following registerLearnerUIRoutes' precedent for HTML routes) and the
+// two platform-wide pages, registered outside any ResolveOrg group per
+// this task's explicit routing note (RequirePlatformOwner has no org
+// context to resolve, see middleware/org.go's doc comment). No CSRF
+// middleware here: every route in this file is GET-only and mutates
+// nothing (see admin_ui.go's package doc comment).
+func registerAdminUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	org.GET("/admin", middleware.RequireRole(auth.RoleOwner), handlers.OrgAdminDashboardPage(d))
+
+	// Platform-wide: no :org_slug, no ResolveOrg — RequirePlatformOwner is
+	// the only gate, and no permissionMatrix/Can() check is involved at
+	// all, per the commerce spec and task-3-permissions-matrix.md's note
+	// that this cross-org view is not org-scoped.
+	platformOwnerOnly := middleware.RequirePlatformOwner(d.Profiles)
+	authed.GET("/admin/organizations", platformOwnerOnly, handlers.PlatformAdminDashboardPage(d))
+	authed.GET("/admin/organizations/:org_slug", platformOwnerOnly, handlers.PlatformAdminOrgDetailPage(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

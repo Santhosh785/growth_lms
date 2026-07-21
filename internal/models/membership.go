@@ -68,6 +68,18 @@ func (r *MembershipRepo) ListByOrg(ctx context.Context, q Querier, orgID string)
 	return out, nil
 }
 
+// CountByOrg returns the number of members in an org — added by Task 9
+// (admin-dashboard) for the platform-owner cross-org list, preferred over
+// len(ListByOrg(...)) so the platform-wide dashboard doesn't have to load
+// every org's full roster (with a profile join) just to count rows.
+func (r *MembershipRepo) CountByOrg(ctx context.Context, q Querier, orgID string) (int, error) {
+	var count int
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM memberships WHERE org_id = $1`, orgID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("models: count memberships by org: %w", err)
+	}
+	return count, nil
+}
+
 func (r *MembershipRepo) UpdateRole(ctx context.Context, q Querier, userID, orgID, role string) error {
 	tag, err := q.Exec(ctx, `UPDATE memberships SET role = $3 WHERE user_id = $1 AND org_id = $2`, userID, orgID, role)
 	if err != nil {

@@ -207,6 +207,134 @@ func (r *OrderRepo) ListByOrg(ctx context.Context, q Querier, orgID string, from
 	return out, rows.Err()
 }
 
+// RevenueFilter narrows RevenueByCourse's results. From/To bound
+// orders.created_at (nil means unbounded on that side); OfferType filters
+// against offers.type (nil means no filter). Added by Task 9
+// (admin-dashboard); intended to be shared by
+// handlers.RevenueReport (commerce_reports.go) too, per this method's
+// doc comment below — RevenueReport currently computes its own
+// aggregation inline via ListByOrg + in-memory grouping and should be
+// migrated to call this method instead of duplicating the query, if that
+// hasn't happened yet by the time you're reading this.
+type RevenueFilter struct {
+	From      *time.Time
+	To        *time.Time
+	OfferType *string
+}
+
+// CourseRevenueSummary is one (course, currency) row of aggregated,
+// net-of-commission revenue — see RevenueByCourse.
+type CourseRevenueSummary struct {
+	CourseID    string
+	CourseTitle string
+	Currency    string
+	OrderCount  int
+	// NetRevenue is total - commission_amount, summed across every
+	// succeeded order in this (course, currency) bucket. Never summed
+	// across currencies (grilling-record.md Q1).
+	NetRevenue float64
+}
+
+// RevenueByCourse aggregates succeeded orders for orgID, grouped by
+// course and currency, optionally narrowed by filter.From/To
+// (orders.created_at) and/or filter.OfferType (offers.type). Only
+// orders.status = 'succeeded' are counted — pending/failed/abandoned
+// orders never contributed revenue in the first place, matching this
+// file's status-constants doc comment. Refunds are NOT netted out here
+// (unlike handlers.RevenueReport's refund-aware figure) — this is the
+// admin dashboard's simpler "enrollment overview" panel, not the
+// creator-facing detailed revenue report; a caller wanting
+// refund-adjusted figures should use handlers.RevenueReport instead.
+//
+// Added by Task 9 (admin-dashboard) as the shared aggregation method
+// task-6-commerce-handlers' own revenue-report endpoint
+// (handlers.RevenueReport) should also call, per this task's cross-
+// reference note — see this method's own doc comment above.
+func (r *OrderRepo) RevenueByCourse(ctx context.Context, q Querier, orgID string, filter RevenueFilter) ([]CourseRevenueSummary, error) {
+	rows, err := q.Query(ctx, `
+		SELECT o.course_id, c.title, ord.currency, count(*)::int AS order_count,
+		       sum(ord.total - ord.commission_amount) AS net_revenue
+		FROM orders ord
+		JOIN offers o ON o.id = ord.offer_id
+		JOIN courses c ON c.id = o.course_id
+		WHERE ord.org_id = $1
+		  AND ord.status = $2
+		  AND ($3::timestamptz IS NULL OR ord.created_at >= $3)
+		  AND ($4::timestamptz IS NULL OR ord.created_at < $4)
+		  AND ($5::text IS NULL OR o.type = $5)
+		GROUP BY o.course_id, c.title, ord.currency
+		ORDER BY c.title, ord.currency
+	`, orgID, OrderStatusSucceeded, filter.From, filter.To, filter.OfferType)
+	if err != nil {
+		return nil, fmt.Errorf("models: revenue by course: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CourseRevenueSummary
+	for rows.Next() {
+		var s CourseRevenueSummary
+		if err := rows.Scan(&s.CourseID, &s.CourseTitle, &s.Currency, &s.OrderCount, &s.NetRevenue); err != nil {
+			return nil, fmt.Errorf("models: scan revenue by course: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// OrgCommissionSummary is one (org, currency) row of aggregated platform
+// commission revenue — see CommissionByOrg.
+type OrgCommissionSummary struct {
+	OrgID      string
+	Currency   string
+	Commission float64
+}
+
+// CommissionByOrg aggregates succeeded orders across ALL organizations,
+// grouped by org and currency, returning each org's total commission
+// collected (commission_amount summed, per currency — never summed
+// across currencies). Added by Task 9 (admin-dashboard) for the
+// platform-owner cross-org dashboard's commission-revenue column.
+//
+// This necessarily reads across every org's orders rows in one query, so
+// it must only ever be called from a platform-owner-authorized session —
+// middleware.RequirePlatformOwner is what makes this safe to call, not
+// anything inside this query.
+//
+// NOTE (RLS gap, flagged per task-9-admin-dashboard.md rather than
+// silently worked around): orders_select (db/migrations/000006_commerce.up.sql)
+// is `USING (orders.learner_id = app_current_user_id() OR
+// (is_org_member(orders.org_id) AND app_current_role() IN ('owner',
+// 'teacher')))` — no `OR app_is_platform_owner()` clause, unlike
+// organizations_select/memberships_select. A platform owner calling this
+// method will see zero rows for any org they are not a member of, even
+// though middleware.RequirePlatformOwner authorized the request. Fixing
+// this properly requires adding an app_is_platform_owner() bypass to
+// orders_select in a follow-up migration — this method does not (and
+// must not) work around it with a service-role connection.
+func (r *OrderRepo) CommissionByOrg(ctx context.Context, q Querier) ([]OrgCommissionSummary, error) {
+	rows, err := q.Query(ctx, `
+		SELECT org_id, currency, sum(commission_amount) AS commission
+		FROM orders
+		WHERE status = $1
+		GROUP BY org_id, currency
+		ORDER BY org_id, currency
+	`, OrderStatusSucceeded)
+	if err != nil {
+		return nil, fmt.Errorf("models: commission by org: %w", err)
+	}
+	defer rows.Close()
+
+	var out []OrgCommissionSummary
+	for rows.Next() {
+		var s OrgCommissionSummary
+		if err := rows.Scan(&s.OrgID, &s.Currency, &s.Commission); err != nil {
+			return nil, fmt.Errorf("models: scan commission by org: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func scanOrder(row pgx.Row) (*Order, error) {
 	var o Order
 	if err := row.Scan(&o.ID, &o.OrgID, &o.OfferID, &o.LearnerID, &o.Currency, &o.Subtotal, &o.DiscountAmount,

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Admin — Organizations</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    section { margin-bottom: 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
+    .progress { background: #eee; border-radius: 6px; height: 10px; overflow: hidden; margin: 0.4rem 0; }
+    .progress .bar { background: #2b7; height: 100%; }
+    .empty { color: #777; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <h1>Platform Admin — Organizations</h1>
+
+  <section>
+    {{if .Orgs}}
+    <table>
+      <thead><tr><th>Organization</th><th>Members</th><th>Courses</th><th>Enrollments</th><th>Commission Revenue</th></tr></thead>
+      <tbody>
+        {{range .Orgs}}
+        <tr>
+          <td><a href="/admin/organizations/{{.Slug}}">{{.Name}}</a> <small>({{.Slug}})</small></td>
+          <td>{{.MemberCount}}</td>
+          <td>{{.CourseCount}}</td>
+          <td>{{.EnrollmentCount}}</td>
+          <td>
+            {{if .Commission}}
+              {{range .Commission}}{{.Currency}} {{printf "%.2f" .Amount}}<br>{{end}}
+            {{else}}
+              <span class="empty">—</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+      <p class="empty">No organizations yet.</p>
+    {{end}}
+  </section>
+</body>
+</html>

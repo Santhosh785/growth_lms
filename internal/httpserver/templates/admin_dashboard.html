@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{.OrgName}} — Admin Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    section { margin-bottom: 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
+    .progress { background: #eee; border-radius: 6px; height: 10px; overflow: hidden; margin: 0.4rem 0; }
+    .progress .bar { background: #2b7; height: 100%; }
+    .empty { color: #777; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  {{if .IsPlatformDrilldown}}
+  <p><a href="/admin/organizations">&larr; Back to all organizations</a></p>
+  {{end}}
+  <h1>{{.OrgName}} — Admin Dashboard</h1>
+
+  <section>
+    <h2>Members</h2>
+    {{if .Members}}
+    <table>
+      <thead><tr><th>Email</th><th>Full Name</th><th>Role</th><th>Joined</th></tr></thead>
+      <tbody>
+        {{range .Members}}
+        <tr>
+          <td>{{.Email}}</td>
+          <td>{{.FullName}}</td>
+          <td>{{.Role}}</td>
+          <td>{{.JoinedAt.Format "January 2, 2006"}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+      <p class="empty">No members yet.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Courses</h2>
+    {{if .Courses}}
+    <table>
+      <thead><tr><th>Title</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody>
+        {{range .Courses}}
+        <tr>
+          <td><a href="/courses/{{.ID}}/edit">{{.Title}}</a></td>
+          <td>{{.Status}}</td>
+          <td>{{.CreatedAt.Format "January 2, 2006"}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+      <p class="empty">No courses yet.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Enrollment &amp; Revenue Overview</h2>
+    <form method="get">
+      <label>From <input type="date" name="from" value="{{.From}}"></label>
+      <label>To <input type="date" name="to" value="{{.To}}"></label>
+      <label>Offer type
+        <select name="offer_type">
+          <option value="" {{if eq .OfferType ""}}selected{{end}}>All</option>
+          <option value="free" {{if eq .OfferType "free"}}selected{{end}}>Free</option>
+          <option value="paid" {{if eq .OfferType "paid"}}selected{{end}}>Paid</option>
+          <option value="subscription" {{if eq .OfferType "subscription"}}selected{{end}}>Subscription</option>
+          <option value="cohort" {{if eq .OfferType "cohort"}}selected{{end}}>Cohort</option>
+          <option value="invitation_only" {{if eq .OfferType "invitation_only"}}selected{{end}}>Invitation only</option>
+        </select>
+      </label>
+      <button type="submit">Filter</button>
+    </form>
+
+    {{if .Revenue}}
+    <table>
+      <thead><tr><th>Course</th><th>Active Enrollments</th><th>Order Count</th><th>Currency</th><th>Net Revenue</th></tr></thead>
+      <tbody>
+        {{range .Revenue}}
+        <tr>
+          <td>{{.CourseTitle}}</td>
+          <td>{{.EnrollmentCount}}</td>
+          <td>{{.OrderCount}}</td>
+          <td>{{.Currency}}</td>
+          <td>{{printf "%.2f" .NetRevenue}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+      <p class="empty">No orders in this window.</p>
+    {{end}}
+  </section>
+</body>
+</html>
