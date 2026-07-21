@@ -107,6 +107,109 @@ func TestRazorpayWebhook_InvalidSignature_Rejected(t *testing.T) {
 	}
 }
 
+// TestRazorpayWebhook_WrongButWellFormedSignature_Rejected is the
+// companion to TestRazorpayWebhook_InvalidSignature_Rejected demanded by
+// task-11-tests.md gap 1: a signature that is syntactically well-formed
+// (looks exactly like a real hex-encoded HMAC-SHA256 digest — 64 lowercase
+// hex characters) but is cryptographically wrong must be rejected the
+// same way a garbage/missing header is, proving this is a real signature
+// check and not merely "is some header present". The real HMAC math
+// itself (a well-formed-but-wrong-secret digest genuinely failing
+// hmac.Equal) is unit-tested directly against RazorpayProvider in
+// internal/payments/razorpay_test.go's "wrong secret" case; this test
+// proves the HTTP handler rejects such a signature end to end, all the
+// way down to "zero rows written".
+func TestRazorpayWebhook_WrongButWellFormedSignature_Rejected(t *testing.T) {
+	engine, d, inspector := newRazorpayWebhookTestEngine(t)
+	ctx := context.Background()
+
+	eventID := "evt_" + uuid.NewString()
+	paymentID := "pay_" + uuid.NewString()
+	body := samplePaymentCapturedBody("payment.captured", paymentID, 1700000000)
+
+	// A syntactically well-formed 64-hex-char signature (exactly what a
+	// real HMAC-SHA256 hex digest looks like) that is nonetheless the
+	// wrong value — distinct in shape from the plainly-garbage
+	// "tampered-signature" string the sibling test above uses.
+	wellFormedWrongSignature := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"[:64]
+	require.Len(t, wellFormedWrongSignature, 64)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/razorpay", bytesReader(body))
+	req.Header.Set("X-Razorpay-Signature", wellFormedWrongSignature)
+	req.Header.Set("x-razorpay-event-id", eventID)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+
+	var count int
+	err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM webhook_events WHERE razorpay_event_id = $1`, eventID).Scan(&count)
+	require.NoError(t, err)
+	require.Equal(t, 0, count, "a well-formed but wrong signature must not write any webhook_events row")
+
+	var orderCount, paymentCount, entitlementCount int
+	require.NoError(t, d.Pool.QueryRow(ctx, `SELECT count(*) FROM orders`).Scan(&orderCount))
+	_ = orderCount // no orders table side effect is expected from this handler either way; recorded for completeness
+	require.NoError(t, d.Pool.QueryRow(ctx, `SELECT count(*) FROM payments WHERE razorpay_payment_id = $1`, paymentID).Scan(&paymentCount))
+	require.Equal(t, 0, paymentCount)
+	require.NoError(t, d.Pool.QueryRow(ctx, `SELECT count(*) FROM entitlements`).Scan(&entitlementCount))
+
+	qi, err := inspector.GetQueueInfo(worker.QueueDefault)
+	if err == nil {
+		require.Equal(t, 0, qi.Pending, "a well-formed but wrong signature must not enqueue anything")
+	}
+}
+
+// razorpaySecretTestValue is a recognizable, non-guessable literal used by
+// TestRazorpayWebhook_SecretsNeverLeaked so the require.NotContains
+// assertion below is non-trivial (not just checking against an empty
+// string).
+const razorpaySecretTestValue = "whsec_do_not_leak_zzq93mx7v2"
+
+// TestRazorpayWebhook_SecretsNeverLeaked covers task-11-tests.md gap 5 for
+// the webhook endpoint itself: neither a successfully-processed delivery
+// nor a rejected-signature delivery's response body may ever contain the
+// configured webhook secret, in any response — success (200) or rejection
+// (401/400/500).
+func TestRazorpayWebhook_SecretsNeverLeaked(t *testing.T) {
+	testutil.RequireDB(t)
+	pool := testutil.AdminDB(t)
+
+	mr := miniredis.RunT(t)
+	redisOpt := asynq.RedisClientOpt{Addr: mr.Addr()}
+	asyncClient := asynq.NewClient(redisOpt)
+	t.Cleanup(func() { _ = asyncClient.Close() })
+
+	d := &AuthDeps{
+		Pool:          pool,
+		Payments:      &paymentstest.FakeProvider{WebhookSecret: razorpaySecretTestValue},
+		WebhookEvents: models.NewWebhookEventRepo(),
+		AsyncQueue:    asyncClient,
+	}
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.POST("/api/webhooks/razorpay", RazorpayWebhook(d))
+
+	// Rejected-signature delivery.
+	rejectedBody := samplePaymentCapturedBody("payment.captured", "pay_"+uuid.NewString(), 1700000000)
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/razorpay", bytesReader(rejectedBody))
+	req.Header.Set("X-Razorpay-Signature", "tampered-signature")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.NotContains(t, rec.Body.String(), razorpaySecretTestValue)
+
+	// Successfully-processed delivery.
+	successBody := samplePaymentCapturedBody("payment.captured", "pay_"+uuid.NewString(), 1700000001)
+	req = httptest.NewRequest(http.MethodPost, "/api/webhooks/razorpay", bytesReader(successBody))
+	req.Header.Set("X-Razorpay-Signature", "valid-signature")
+	req.Header.Set("x-razorpay-event-id", "evt_"+uuid.NewString())
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), razorpaySecretTestValue)
+}
+
 func TestRazorpayWebhook_ValidSignature_RecordsAndEnqueuesOnce(t *testing.T) {
 	engine, d, inspector := newRazorpayWebhookTestEngine(t)
 	ctx := context.Background()

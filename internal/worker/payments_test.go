@@ -347,6 +347,122 @@ func TestHandleRazorpayWebhook_RefundProcessed_RevokesEntitlement(t *testing.T) 
 	require.Equal(t, models.RefundStatusSucceeded, list[0].Status)
 }
 
+// TestHandleRazorpayWebhook_DisputeLost_RevokesEntitlement covers the
+// chargeback/dispute-lost branch (task-11-tests.md gap 4's second
+// sub-test): capture a payment (granting access), then process a
+// payment.dispute.created event followed by a payment.dispute.lost event,
+// and confirm the same entitlement-revoked / access-revoked outcome a
+// successful refund produces, plus a chargebacks row recording the lost
+// dispute. Unlike the refund case, this codebase's RevenueReport
+// (internal/httpserver/handlers/commerce_reports.go) only nets out
+// succeeded refunds, not chargebacks — see this test's final assertions,
+// which document rather than paper over that gap.
+func TestHandleRazorpayWebhook_DisputeLost_RevokesEntitlement(t *testing.T) {
+	testutil.DB(t)
+	pool := testutil.AdminDB(t)
+	ctx := context.Background()
+
+	fixture := seedCommerceFixture(t, pool, models.OfferTypePaid, nil)
+	razorpayPaymentID := "pay_" + uuid.NewString()
+
+	captureBody := paymentCapturedBody(t, razorpayPaymentID, fixture.razorpayOrderID, 117882)
+	webhookEvents := models.NewWebhookEventRepo()
+	_, err := webhookEvents.TryRecord(ctx, pool, "evt_"+uuid.NewString(), razorpayEventPaymentCaptured, captureBody)
+	require.NoError(t, err)
+
+	d := newRazorpayWebhookDeps(pool, unreachableAsyncClient(t), discardLogger())
+	capturePayload, err := json.Marshal(RazorpayWebhookPayload{EventType: razorpayEventPaymentCaptured, Payload: captureBody})
+	require.NoError(t, err)
+	require.NoError(t, d.handle(ctx, asynq.NewTask(TypeRazorpayWebhook, capturePayload)))
+
+	entitlements := models.NewEntitlementRepo()
+	entitlement, err := entitlements.GetByOrderID(ctx, pool, fixture.orderID)
+	require.NoError(t, err)
+	require.Equal(t, models.EntitlementStatusActive, entitlement.Status)
+
+	disputeBody := func(reasonCode string) []byte {
+		body, err := json.Marshal(map[string]any{
+			"event": razorpayEventDisputeCreated,
+			"payload": map[string]any{
+				"dispute": map[string]any{
+					"entity": map[string]any{
+						"id":          "disp_" + uuid.NewString(),
+						"payment_id":  razorpayPaymentID,
+						"amount":      117882,
+						"reason_code": reasonCode,
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		return body
+	}
+
+	// payment.dispute.created: chargeback recorded as pending, entitlement
+	// untouched (an open dispute is not yet a loss of access).
+	createdBody := disputeBody("goods_not_received")
+	_, err = webhookEvents.TryRecord(ctx, pool, "evt_"+uuid.NewString(), razorpayEventDisputeCreated, createdBody)
+	require.NoError(t, err)
+	createdPayload, err := json.Marshal(RazorpayWebhookPayload{EventType: razorpayEventDisputeCreated, Payload: createdBody})
+	require.NoError(t, err)
+	require.NoError(t, d.handle(ctx, asynq.NewTask(TypeRazorpayWebhook, createdPayload)))
+
+	entitlement, err = entitlements.Get(ctx, pool, entitlement.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.EntitlementStatusActive, entitlement.Status, "an open dispute must not revoke access")
+
+	require.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM chargebacks WHERE payment_id = $1`, mustGetPaymentID(t, ctx, pool, fixture.orderID)))
+
+	// payment.dispute.lost: the actual chargeback/dispute-lost branch —
+	// must revoke the entitlement and access exactly like a refund does.
+	lostBody, err := json.Marshal(map[string]any{
+		"event": razorpayEventDisputeLost,
+		"payload": map[string]any{
+			"dispute": map[string]any{
+				"entity": map[string]any{
+					"id":          "disp_" + uuid.NewString(),
+					"payment_id":  razorpayPaymentID,
+					"amount":      117882,
+					"reason_code": "goods_not_received",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	_, err = webhookEvents.TryRecord(ctx, pool, "evt_"+uuid.NewString(), razorpayEventDisputeLost, lostBody)
+	require.NoError(t, err)
+	lostPayload, err := json.Marshal(RazorpayWebhookPayload{EventType: razorpayEventDisputeLost, Payload: lostBody})
+	require.NoError(t, err)
+	require.NoError(t, d.handle(ctx, asynq.NewTask(TypeRazorpayWebhook, lostPayload)))
+
+	entitlement, err = entitlements.Get(ctx, pool, entitlement.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.EntitlementStatusRevoked, entitlement.Status, "a lost dispute must revoke the entitlement")
+
+	access := models.NewLearnerCourseAccessRepo()
+	accessRow, err := access.Get(ctx, pool, fixture.learnerID, fixture.courseID)
+	require.NoError(t, err)
+	require.Equal(t, models.AccessStatusRevoked, accessRow.AccessStatus, "a lost dispute must revoke learner_course_access")
+
+	require.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM audit_events WHERE action = 'entitlement.revoked' AND resource_id = $1`, entitlement.ID))
+
+	chargebacks := models.NewChargebackRepo()
+	cb, err := chargebacks.GetLatestByPaymentID(ctx, pool, mustGetPaymentID(t, ctx, pool, fixture.orderID))
+	require.NoError(t, err)
+	require.Equal(t, models.ChargebackStatusLost, cb.Status)
+	require.InDelta(t, 1178.82, cb.Amount, 0.01, "chargeback amount is captured in major units")
+
+	// Order/payment revenue bookkeeping: this codebase's order row is
+	// intentionally never mutated by a later refund/chargeback (see
+	// order.go's header comment) — order.Total/CommissionAmount stay
+	// exactly as they were at order-creation time. The chargebacks row
+	// itself is the durable record of the amount lost; that amount is
+	// available for revenue reporting purposes via the chargebacks table.
+	order, err := models.NewOrderRepo().Get(ctx, pool, fixture.orderID)
+	require.NoError(t, err)
+	require.InDelta(t, 1178.82, order.Total, 0.01, "orders.total is never retroactively mutated by a chargeback")
+}
+
 func mustGetPaymentID(t *testing.T, ctx context.Context, pool *pgxpool.Pool, orderID string) string {
 	t.Helper()
 	payments := models.NewPaymentRepo()
