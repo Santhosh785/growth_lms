@@ -9,6 +9,7 @@ import (
 	"growth-lms/internal/config"
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
+	"growth-lms/internal/payments"
 )
 
 // AuthDeps bundles everything the auth/org/membership/invitation/api-token
@@ -54,4 +55,8 @@ type AuthDeps struct {
 	AssignmentSubmissions *models.LearnerAssignmentSubmissionRepo
 	AssignmentGrades      *models.LearnerAssignmentGradeRepo
 	Announcements         *models.CourseAnnouncementRepo
+
+	// Task 6: commerce.
+	Payments      payments.Provider
+	WebhookEvents *models.WebhookEventRepo
 }

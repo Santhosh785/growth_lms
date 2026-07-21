@@ -19,6 +19,7 @@ import (
 	"growth-lms/internal/httpserver/webconsole"
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
+	"growth-lms/internal/payments"
 	"growth-lms/internal/ratelimit"
 	"growth-lms/internal/worker"
 )
@@ -110,6 +111,9 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		AssignmentSubmissions: models.NewLearnerAssignmentSubmissionRepo(),
 		AssignmentGrades:      models.NewLearnerAssignmentGradeRepo(),
 		Announcements:         models.NewCourseAnnouncementRepo(),
+
+		Payments:      payments.NewRazorpayProvider(cfg.Razorpay),
+		WebhookEvents: models.NewWebhookEventRepo(),
 	}
 
 	registerAuthRoutes(engine, deps, redisClient)
@@ -296,6 +300,15 @@ func registerCourseRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	// doing anything, matching the "verified provider webhook only" rule
 	// the spec compares to the payments-webhook precedent.
 	engine.POST("/api/webhooks/bunny", handlers.BunnyWebhook(d))
+
+	// The Razorpay payment webhook has the same NO auth/RLS middleware
+	// treatment as Bunny's above, for the same reason: an external caller
+	// with no session, bearer token, or org context. Signature
+	// verification (via d.Payments.VerifyWebhookSignature) is this
+	// route's only authentication mechanism, by design — see
+	// handlers.RazorpayWebhook's doc comment for the full division of
+	// responsibility between this handler and the Task 8 worker job.
+	engine.POST("/api/webhooks/razorpay", handlers.RazorpayWebhook(d))
 
 	// Lightweight HTMX course-editor UI: cookie-authenticated (the same
 	// session cookie the JSON API's Authenticate middleware already

@@ -14,6 +14,7 @@ import (
 const (
 	TypeBunnyTranscodeComplete = "bunny:transcode_complete"
 	TypeSweepScheduledPublish  = "course:sweep_scheduled_publish"
+	TypeRazorpayWebhook        = "razorpay:webhook"
 )
 
 // BunnyTranscodeCompletePayload is enqueued by the (already
@@ -24,6 +25,20 @@ type BunnyTranscodeCompletePayload struct {
 	Status       string `json:"status"` // "ready" or "failed"
 	Duration     int    `json:"duration"`
 	ThumbnailURL string `json:"thumbnail_url"`
+}
+
+// RazorpayWebhookPayload is enqueued by the (already
+// signature-verified, idempotency-gated) HTTP webhook handler — this
+// task's own code has no HTTP-level trust decision left to make, only
+// the actual order/payment/refund/entitlement state change (Task 8's
+// job, consuming TypeRazorpayWebhook). Payload carries the raw,
+// unparsed webhook request body (not a re-marshaled struct) so the
+// worker job can interpret whatever fields it needs for EventType
+// without this handler/enqueue boundary having to anticipate every
+// Razorpay event shape up front.
+type RazorpayWebhookPayload struct {
+	EventType string `json:"event_type"`
+	Payload   []byte `json:"payload"`
 }
 
 // NewClient builds an asynq.Client for enqueuing tasks from the HTTP
@@ -43,6 +58,21 @@ func EnqueueBunnyTranscodeComplete(client *asynq.Client, payload BunnyTranscodeC
 	_, err = client.Enqueue(asynq.NewTask(TypeBunnyTranscodeComplete, data), asynq.Queue(QueueDefault))
 	if err != nil {
 		return fmt.Errorf("worker: enqueue bunny transcode task: %w", err)
+	}
+	return nil
+}
+
+// EnqueueRazorpayWebhook enqueues the DB-update task for a
+// signature-verified, newly-recorded (per WebhookEventRepo.TryRecord)
+// Razorpay webhook delivery.
+func EnqueueRazorpayWebhook(client *asynq.Client, payload RazorpayWebhookPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("worker: marshal razorpay webhook payload: %w", err)
+	}
+	_, err = client.Enqueue(asynq.NewTask(TypeRazorpayWebhook, data), asynq.Queue(QueueDefault))
+	if err != nil {
+		return fmt.Errorf("worker: enqueue razorpay webhook task: %w", err)
 	}
 	return nil
 }
