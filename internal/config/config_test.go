@@ -23,6 +23,7 @@ func setValidEnv(t *testing.T) {
 		"LMS_RESEND_API_KEY":            "resend-key",
 		"LMS_RAZORPAY_KEY_ID":           "rzp_test_id",
 		"LMS_RAZORPAY_KEY_SECRET":       "rzp_test_secret",
+		"LMS_RAZORPAY_WEBHOOK_SECRET":   "rzp-webhook-secret",
 		"LMS_BASE_URL":                  "http://localhost:8080",
 		"LMS_PORT":                      "8080",
 	}
@@ -93,6 +94,16 @@ func TestLoad_MissingBunnyWebhookSecret(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for missing LMS_BUNNY_WEBHOOK_SECRET")
+	}
+}
+
+func TestLoad_MissingRazorpayWebhookSecret(t *testing.T) {
+	setValidEnv(t)
+	os.Unsetenv("LMS_RAZORPAY_WEBHOOK_SECRET")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing LMS_RAZORPAY_WEBHOOK_SECRET")
 	}
 }
 
