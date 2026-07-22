@@ -138,6 +138,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	// login/signup page to everyone else.
 	engine.GET("/", middleware.OptionalAuthenticate(verifier), handlers.HomePage(deps))
 
+	// Shared nav bar every server-rendered page htmx-loads on load (see
+	// templates/nav.html + handlers.NavFragment's doc comment): resolves
+	// its own auth/role state, so pages don't thread that data through
+	// their own handlers just to render a nav. WithRequestTx is needed
+	// because NavFragment queries profiles/memberships for role-based
+	// links; OptionalAuthenticate (not Authenticate) so the fragment
+	// still renders a "Log in" link for anonymous visitors instead of 401ing.
+	engine.GET("/nav", middleware.OptionalAuthenticate(verifier), middleware.WithRequestTx(db), handlers.NavFragment(deps))
+	engine.GET("/nav/logout", middleware.Authenticate(verifier), handlers.NavLogoutRedirect(deps))
+
 	registerAuthRoutes(engine, deps, redisClient)
 	registerOrgRoutes(engine, deps, db)
 	registerCourseRoutes(engine, deps, db, redisClient)

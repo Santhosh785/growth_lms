@@ -1,0 +1,37 @@
+{{define "nav-styles"}}
+<style>
+  .lms-nav { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1rem; background: #222; color: #fff; margin: -2rem -1rem 2rem; flex-wrap: wrap; }
+  .lms-nav a { color: #fff; text-decoration: none; opacity: 0.85; }
+  .lms-nav a:hover { opacity: 1; text-decoration: underline; }
+  .lms-nav .brand { font-weight: bold; opacity: 1; margin-right: 0.5rem; }
+  .lms-nav .spacer { flex: 1; }
+  .lms-nav .email { opacity: 0.6; font-size: 0.85rem; }
+</style>
+{{end}}
+
+{{define "nav-placeholder"}}
+<div id="lms-nav" hx-get="/nav" hx-trigger="load" hx-swap="outerHTML">
+  <nav class="lms-nav"><a class="brand" href="/">Growth LMS</a></nav>
+</div>
+{{end}}
+
+{{define "nav"}}
+<nav class="lms-nav" id="lms-nav">
+  <a class="brand" href="/">Growth LMS</a>
+  {{if .LoggedIn}}
+    <a href="/dashboard">Dashboard</a>
+    {{range .OwnedOrgs}}
+      <a href="/orgs/{{.Slug}}/admin">{{.Name}} Admin</a>
+    {{end}}
+    {{if .IsPlatformOwner}}
+      <a href="/admin/organizations">Platform Admin</a>
+    {{end}}
+    <span class="spacer"></span>
+    <span class="email">{{.Email}}</span>
+    <a href="/nav/logout">Log out</a>
+  {{else}}
+    <span class="spacer"></span>
+    <a href="/">Log in</a>
+  {{end}}
+</nav>
+{{end}}

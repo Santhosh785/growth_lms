@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>Grading: {{.Course.Title}}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
     .submission { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
@@ -13,6 +15,7 @@
   </style>
 </head>
 <body>
+  {{template "nav-placeholder" .}}
   <h1>Grading queue: {{.Course.Title}}</h1>
 
   {{if .Submissions}}

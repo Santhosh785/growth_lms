@@ -68,6 +68,42 @@ func (r *MembershipRepo) ListByOrg(ctx context.Context, q Querier, orgID string)
 	return out, nil
 }
 
+// OwnedOrg is one organization a user has the "owner" role in, for
+// populating cross-page nav links to that org's admin dashboard.
+type OwnedOrg struct {
+	Slug string
+	Name string
+}
+
+// ListOwnedByUser returns the organizations the given user is an "owner"
+// of (slug + name only), for the shared nav's per-org admin links.
+func (r *MembershipRepo) ListOwnedByUser(ctx context.Context, q Querier, userID string) ([]OwnedOrg, error) {
+	rows, err := q.Query(ctx, `
+		SELECT o.slug, o.name
+		FROM memberships m
+		JOIN organizations o ON o.id = m.org_id
+		WHERE m.user_id = $1 AND m.role = 'owner'
+		ORDER BY o.name ASC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list owned orgs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []OwnedOrg
+	for rows.Next() {
+		var o OwnedOrg
+		if err := rows.Scan(&o.Slug, &o.Name); err != nil {
+			return nil, fmt.Errorf("models: scan owned org: %w", err)
+		}
+		out = append(out, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("models: list owned orgs: %w", err)
+	}
+	return out, nil
+}
+
 // CountByOrg returns the number of members in an org — added by Task 9
 // (admin-dashboard) for the platform-owner cross-org list, preferred over
 // len(ListByOrg(...)) so the platform-wide dashboard doesn't have to load

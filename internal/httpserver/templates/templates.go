@@ -16,8 +16,26 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html nav.html
 var fs embed.FS
+
+// Nav is the shared nav bar every authenticated/semi-public page embeds
+// via {{template "nav-placeholder" .}} (see nav.html). It's htmx-loaded
+// from GET /nav rather than rendered inline by each page's own handler,
+// so pages don't need to thread auth/role data through just to show a
+// nav bar — see handlers.NavFragment's doc comment for why.
+var Nav = template.Must(template.ParseFS(fs, "nav.html"))
+
+// parseWithNav parses a page template together with nav.html, so the
+// page can reference the "nav-styles" and "nav-placeholder" block
+// templates defined there. name must come first in ParseFS's argument
+// list: the resulting *Template is named after (and defaults to
+// executing) whichever file is parsed first, and it must be the page
+// itself, not nav.html (which contains only {{define}} blocks and no
+// top-level content of its own).
+func parseWithNav(name string) *template.Template {
+	return template.Must(template.ParseFS(fs, name, "nav.html"))
+}
 
 // Home is the public "/" landing page: a login/signup form for anonymous
 // visitors (HomePage redirects already-authenticated visitors to
@@ -25,19 +43,19 @@ var fs embed.FS
 var Home = template.Must(template.ParseFS(fs, "home.html"))
 
 // CourseEditor is the parsed course-editor page template (Task 4).
-var CourseEditor = template.Must(template.ParseFS(fs, "course_editor.html"))
+var CourseEditor = parseWithNav("course_editor.html")
 
 // CourseLearn is the learner-facing course landing page (Task 5 Stage 8).
-var CourseLearn = template.Must(template.ParseFS(fs, "course_learn.html"))
+var CourseLearn = parseWithNav("course_learn.html")
 
 // LessonPlayer is the learner-facing lesson player page (Task 5 Stage 8).
-var LessonPlayer = template.Must(template.ParseFS(fs, "lesson_player.html"))
+var LessonPlayer = parseWithNav("lesson_player.html")
 
 // Dashboard is the learner dashboard page (Task 5 Stage 8).
-var Dashboard = template.Must(template.ParseFS(fs, "dashboard.html"))
+var Dashboard = parseWithNav("dashboard.html")
 
 // Submissions is the teacher grading-queue page (Task 5 Stage 8).
-var Submissions = template.Must(template.ParseFS(fs, "submissions.html"))
+var Submissions = parseWithNav("submissions.html")
 
 // CertificateVerify is the public certificate-verification HTML page
 // (Task 5 Stage 8; the JSON API sibling is handlers.VerifyCertificate).
@@ -45,22 +63,22 @@ var CertificateVerify = template.Must(template.ParseFS(fs, "certificate_verify.h
 
 // Checkout is the learner-facing checkout page (Task 6 commerce-handlers;
 // the JSON API siblings are handlers.CreateOrder/handlers.OrderStatus).
-var Checkout = template.Must(template.ParseFS(fs, "checkout.html"))
+var Checkout = parseWithNav("checkout.html")
 
 // AdminDashboard is the org-scoped and platform-owner-drill-down
 // read-only admin dashboard page (Task 9 admin-dashboard;
 // handlers.OrgAdminDashboardPage and handlers.PlatformAdminOrgDetailPage
 // both render through this one template — see loadAdminDashboardData's
 // doc comment for why they share it).
-var AdminDashboard = template.Must(template.ParseFS(fs, "admin_dashboard.html"))
+var AdminDashboard = parseWithNav("admin_dashboard.html")
 
 // AdminOrganizations is the platform-owner cross-organization dashboard
 // page (Task 9 admin-dashboard; handlers.PlatformAdminDashboardPage).
-var AdminOrganizations = template.Must(template.ParseFS(fs, "admin_organizations.html"))
+var AdminOrganizations = parseWithNav("admin_organizations.html")
 
 // OrderStatus is the "processing your payment" page a learner's browser
 // lands on after Razorpay's checkout.js success callback (Task 10
 // routes-wiring; handlers.OrderStatusPage/handlers.OrderStatusFragment —
 // see order_status_ui.go). It htmx-polls status-fragment every 2 seconds
 // until an HX-Redirect response carries it into the course.
-var OrderStatus = template.Must(template.ParseFS(fs, "order_status.html"))
+var OrderStatus = parseWithNav("order_status.html")

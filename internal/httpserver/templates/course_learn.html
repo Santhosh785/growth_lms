@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>{{.Course.Title}}</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
     .progress { background: #eee; border-radius: 6px; height: 12px; overflow: hidden; margin: 0.5rem 0; }
@@ -16,6 +17,7 @@
   </style>
 </head>
 <body>
+  {{template "nav-placeholder" .}}
   <h1>{{.Course.Title}} <small>({{.Course.Status}})</small></h1>
   <p>{{.Course.Description}}</p>
 

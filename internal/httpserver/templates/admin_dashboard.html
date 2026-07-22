@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>{{.OrgName}} — Admin Dashboard</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
     section { margin-bottom: 2rem; }
@@ -15,6 +17,7 @@
   </style>
 </head>
 <body>
+  {{template "nav-placeholder" .}}
   {{if .IsPlatformDrilldown}}
   <p><a href="/admin/organizations">&larr; Back to all organizations</a></p>
   {{end}}

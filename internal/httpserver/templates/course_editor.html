@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>Edit: {{.Course.Title}}</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
     .chapter { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
@@ -14,6 +15,7 @@
   </style>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
+  {{template "nav-placeholder" .}}
   <h1>{{.Course.Title}} <small>({{.Course.Status}})</small></h1>
 
   <div class="toolbar">

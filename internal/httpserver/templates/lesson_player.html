@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>{{.Lesson.Title}} — {{.Course.Title}}</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
     .block { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
@@ -14,6 +15,7 @@
   </style>
 </head>
 <body>
+  {{template "nav-placeholder" .}}
   <p><a href="/courses/{{.Course.ID}}/learn">&larr; Back to course</a></p>
   <h1>{{.Lesson.Title}}</h1>
 
