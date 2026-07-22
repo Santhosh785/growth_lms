@@ -87,6 +87,29 @@ func (r *CourseRepo) List(ctx context.Context, q Querier, orgID string) ([]*Cour
 	return out, rows.Err()
 }
 
+// CountByOrg returns the number of courses in an org — added by Task 9
+// (admin-dashboard) for the platform-owner cross-org list, preferred over
+// len(List(...)) so the platform-wide dashboard doesn't have to load
+// every org's full course rows just to count them.
+//
+// NOTE (RLS gap, flagged per task-9-admin-dashboard.md rather than
+// silently worked around): courses_select
+// (db/migrations/000003_course_domain.up.sql) is `USING
+// (is_org_member(courses.org_id))` with NO `OR app_is_platform_owner()`
+// clause, unlike organizations_select/memberships_select. A platform
+// owner who is not a member of the org being viewed will see zero rows
+// here even though middleware.RequirePlatformOwner authorized the
+// request — courses_select needs the same platform-owner bypass
+// organizations_select already has before this method (and the
+// platform-owner cross-org dashboard's course counts) is fully correct.
+func (r *CourseRepo) CountByOrg(ctx context.Context, q Querier, orgID string) (int, error) {
+	var count int
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM courses WHERE org_id = $1`, orgID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("models: count courses by org: %w", err)
+	}
+	return count, nil
+}
+
 // UpdateMetadata updates the caller-editable fields only; status and its
 // timestamps are handled separately by the status-transition methods
 // below so the two concerns can't accidentally interfere with each other.

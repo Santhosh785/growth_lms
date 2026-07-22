@@ -111,6 +111,40 @@ func (r *OrgRepo) GetBunnyLibraryID(ctx context.Context, q Querier, orgID string
 	return *libraryID, nil
 }
 
+// ListAll returns every organization on the platform, no org_id filter —
+// added by Task 9 (admin-dashboard) for the platform-owner cross-org
+// dashboard. organizations_select's RLS policy already carries an
+// `OR app_is_platform_owner()` clause (see
+// db/migrations/000002_auth_tenancy.up.sql), so this plain SELECT is
+// visible to a platform-owner-authorized session without any
+// service-role bypass — the HTTP layer's middleware.RequirePlatformOwner
+// gate is what makes calling this safe, not anything in this query
+// itself. Callers MUST NOT call this from a non-platform-owner session.
+func (r *OrgRepo) ListAll(ctx context.Context, q Querier) ([]*Organization, error) {
+	rows, err := q.Query(ctx, `
+		SELECT id, slug, name, created_by_user_id, created_at, updated_at
+		FROM organizations
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("models: list all organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*Organization
+	for rows.Next() {
+		var o Organization
+		if err := rows.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedByUserID, &o.CreatedAt, &o.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("models: scan organization: %w", err)
+		}
+		out = append(out, &o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("models: list all organizations: %w", err)
+	}
+	return out, nil
+}
+
 // SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
 // for an org. Only ever called once per org (the first video upload finds
 // GetBunnyLibraryID returning "" and calls this immediately after

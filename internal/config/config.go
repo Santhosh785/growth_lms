@@ -84,7 +84,18 @@ type ResendConfig struct {
 type RazorpayConfig struct {
 	KeyID     string
 	KeySecret string
+	// WebhookSecret verifies the signature on incoming Razorpay webhook
+	// events (order/payment status changes). Enrollment/payment access
+	// must only ever be granted from a verified webhook, never a browser
+	// return URL — see plan.md's tenancy/commerce non-negotiables.
+	WebhookSecret string
 }
+
+// Note: the stale-order-abandon timeout (how long a pending order is left
+// before being swept and marked abandoned) is not a config field — it
+// follows the publishSweepInterval precedent in internal/worker/worker.go,
+// which hardcodes its sweep interval as an unexported const rather than an
+// env-configurable value.
 
 type CORSConfig struct {
 	AllowedOrigins []string
@@ -128,6 +139,7 @@ func Load() (*Config, error) {
 		{"LMS_RESEND_API_KEY", nil},
 		{"LMS_RAZORPAY_KEY_ID", nil},
 		{"LMS_RAZORPAY_KEY_SECRET", nil},
+		{"LMS_RAZORPAY_WEBHOOK_SECRET", nil},
 		{"LMS_BASE_URL", validateURL},
 	}
 
@@ -190,8 +202,9 @@ func Load() (*Config, error) {
 			FromEmail: getEnv("LMS_RESEND_FROM_EMAIL", "notifications@growth-lms.example"),
 		},
 		Razorpay: RazorpayConfig{
-			KeyID:     values["LMS_RAZORPAY_KEY_ID"],
-			KeySecret: values["LMS_RAZORPAY_KEY_SECRET"],
+			KeyID:         values["LMS_RAZORPAY_KEY_ID"],
+			KeySecret:     values["LMS_RAZORPAY_KEY_SECRET"],
+			WebhookSecret: values["LMS_RAZORPAY_WEBHOOK_SECRET"],
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: origins,

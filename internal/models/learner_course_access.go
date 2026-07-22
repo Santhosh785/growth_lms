@@ -69,6 +69,20 @@ func (r *LearnerCourseAccessRepo) SetStatus(ctx context.Context, q Querier, id, 
 	return scanLearnerCourseAccess(row)
 }
 
+// SetEntitlementAndStatus repoints an existing access row at a new
+// entitlement (e.g. a learner re-purchasing after a prior entitlement
+// expired/was revoked) and sets access_status in the same UPDATE — used
+// by the Task 8 worker's payment.captured processing when a
+// learner_course_access row already exists for this (learner, course)
+// pair, so the new purchase's entitlement becomes the one access checks
+// resolve through, without needing a second query to also flip status.
+func (r *LearnerCourseAccessRepo) SetEntitlementAndStatus(ctx context.Context, q Querier, id string, entitlementID *string, status string) (*LearnerCourseAccess, error) {
+	row := q.QueryRow(ctx, `
+		UPDATE learner_course_access SET entitlement_id = $2, access_status = $3
+		WHERE id = $1 RETURNING `+learnerCourseAccessColumns, id, entitlementID, status)
+	return scanLearnerCourseAccess(row)
+}
+
 // ListActiveLearnerIDsByCourse returns the learner_id of every row with
 // access_status='active' for courseID — used by the course-announcement
 // handler to fan out one course-announcement-posted notification job per
@@ -92,6 +106,46 @@ func (r *LearnerCourseAccessRepo) ListActiveLearnerIDsByCourse(ctx context.Conte
 			return nil, fmt.Errorf("models: scan active learner id: %w", err)
 		}
 		out = append(out, learnerID)
+	}
+	return out, rows.Err()
+}
+
+// CountActiveByOrg returns, for every course in orgID that has at least
+// one active access row, the count of learners with access_status =
+// 'active' — added by Task 9 (admin-dashboard) for the org-scoped
+// dashboard's "Enrollment overview" panel and the platform-owner
+// cross-org list's summed enrollment-count column. Keyed by course_id
+// rather than returning full rows: this is a count-only aggregation, per
+// the task doc's preference for cheap count queries over loading and
+// len()-ing full row sets.
+//
+// NOTE (RLS gap, flagged per task-9-admin-dashboard.md rather than
+// silently worked around): learner_course_access_select
+// (db/migrations/000004_learner_journey.up.sql) is `USING (learner_id =
+// app_current_user_id() OR (is_org_member(...) AND app_current_role() IN
+// ('owner', 'teacher')))` — no `OR app_is_platform_owner()` clause. A
+// platform owner viewing an org they don't belong to will see zero rows
+// here, the same gap as CourseRepo.CountByOrg and OrderRepo.CommissionByOrg.
+func (r *LearnerCourseAccessRepo) CountActiveByOrg(ctx context.Context, q Querier, orgID string) (map[string]int, error) {
+	rows, err := q.Query(ctx, `
+		SELECT course_id, count(*)
+		FROM learner_course_access
+		WHERE org_id = $1 AND access_status = $2
+		GROUP BY course_id
+	`, orgID, AccessStatusActive)
+	if err != nil {
+		return nil, fmt.Errorf("models: count active learner course access by org: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var courseID string
+		var count int
+		if err := rows.Scan(&courseID, &count); err != nil {
+			return nil, fmt.Errorf("models: scan active learner course access count: %w", err)
+		}
+		out[courseID] = count
 	}
 	return out, rows.Err()
 }

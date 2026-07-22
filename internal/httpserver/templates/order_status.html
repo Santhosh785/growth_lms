@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Processing your order</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; text-align: center; }
+    #order-status { border: 1px solid #ccc; border-radius: 6px; padding: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Processing your payment</h1>
+  <!--
+    This div is the htmx polling root. It hits status-fragment (a small
+    HTML-fragment-returning handler, NOT the JSON GET /api/orders/:orderId/status
+    endpoint — htmx can't swap raw JSON into the DOM) every 2 seconds.
+    Once the order's entitlement is active, the fragment handler responds
+    with an HX-Redirect header instead of a fragment, and htmx follows it
+    as a full client-side navigation into the course automatically — see
+    handlers.OrderStatusFragment's doc comment in order_status_ui.go.
+  -->
+  <div id="order-status"
+       hx-get="/orders/{{.OrderID}}/status-fragment"
+       hx-trigger="every 2s"
+       hx-swap="outerHTML">
+    Processing your payment&hellip;
+  </div>
+</body>
+</html>
