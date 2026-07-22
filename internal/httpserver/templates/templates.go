@@ -13,8 +13,13 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html
 var fs embed.FS
+
+// Home is the public "/" landing page: a login/signup form for anonymous
+// visitors (HomePage redirects already-authenticated visitors to
+// /dashboard before this template is ever rendered).
+var Home = template.Must(template.ParseFS(fs, "home.html"))
 
 // CourseEditor is the parsed course-editor page template (Task 4).
 var CourseEditor = template.Must(template.ParseFS(fs, "course_editor.html"))

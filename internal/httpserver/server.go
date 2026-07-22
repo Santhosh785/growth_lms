@@ -112,6 +112,12 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Announcements:         models.NewCourseAnnouncementRepo(),
 	}
 
+	// Public landing page: OptionalAuthenticate resolves the session
+	// cookie if present without aborting, so HomePage can redirect an
+	// already-logged-in visitor to /dashboard while still serving the
+	// login/signup page to everyone else.
+	engine.GET("/", middleware.OptionalAuthenticate(verifier), handlers.HomePage(deps))
+
 	registerAuthRoutes(engine, deps, redisClient)
 	registerOrgRoutes(engine, deps, db)
 	registerCourseRoutes(engine, deps, db)
