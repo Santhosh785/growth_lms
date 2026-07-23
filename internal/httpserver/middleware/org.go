@@ -61,6 +61,20 @@ func ResolveOrg(orgs *models.OrgRepo, memberships *models.MembershipRepo, profil
 		slug := c.Param("org_slug")
 		ctx := c.Request.Context()
 
+		// Load the caller's profile once, up front: it tells us both whether
+		// the caller is suspended (Task 10 — blocked from acting on any org)
+		// and whether they are a platform owner (used in the membership-miss
+		// branch below), so we never issue a second GetByID.
+		profile, perr := profiles.GetByID(ctx, tx, ac.UserID)
+		if perr != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if profile.SuspendedAt != nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "this account has been suspended"})
+			return
+		}
+
 		org, err := orgs.GetBySlug(ctx, tx, slug)
 		if err != nil {
 			if errors.Is(err, models.ErrNotFound) {
@@ -71,6 +85,14 @@ func ResolveOrg(orgs *models.OrgRepo, memberships *models.MembershipRepo, profil
 			return
 		}
 
+		// A deactivated org is frozen for its own members (owners included);
+		// only a platform owner may still resolve it, for the support
+		// drill-down and to reactivate it.
+		if org.DeactivatedAt != nil && !profile.IsPlatformOwner {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "organization is deactivated"})
+			return
+		}
+
 		role, err := memberships.GetRole(ctx, tx, ac.UserID, org.ID)
 		isPlatformOwner := false
 		if err != nil {
@@ -78,8 +100,7 @@ func ResolveOrg(orgs *models.OrgRepo, memberships *models.MembershipRepo, profil
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 				return
 			}
-			profile, perr := profiles.GetByID(ctx, tx, ac.UserID)
-			if perr != nil || !profile.IsPlatformOwner {
+			if !profile.IsPlatformOwner {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "not a member of this organization"})
 				return
 			}

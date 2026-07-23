@@ -85,6 +85,9 @@ func evaluateAndIssueCertificateIfComplete(ctx context.Context, tx models.Querie
 
 	storagePath := fmt.Sprintf("org/%s/courses/%s/certificates/%s.pdf", course.OrgID, course.ID, certificateID)
 	if err := d.Storage.UploadServerSide(ctx, d.Config.Supabase.StorageBucket, storagePath, pdfBytes, certificatePDFContentType); err != nil {
+		d.recordAlert(ctx, models.AlertSeverityWarning, models.AlertCategoryStorage,
+			"supabase_storage", "failed to upload certificate PDF: "+err.Error(),
+			map[string]any{"org_id": course.OrgID, "course_id": course.ID})
 		return fmt.Errorf("handlers: upload certificate pdf: %w", err)
 	}
 

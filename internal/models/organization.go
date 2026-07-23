@@ -15,8 +15,15 @@ type Organization struct {
 	Slug            string
 	Name            string
 	CreatedByUserID string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// DeactivatedAt/DeactivatedReason are the Task 10 platform-admin
+	// deactivation state (migration 000017). A non-nil DeactivatedAt
+	// freezes the org: ResolveOrg refuses every member (a platform owner
+	// may still resolve it for support). Only a platform owner can
+	// set/clear them, via admin_set_org_active().
+	DeactivatedAt     *time.Time
+	DeactivatedReason *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // OrgBranding is the Task 8 branding/theme/SEO/custom-domain surface on
@@ -67,12 +74,12 @@ func (r *OrgRepo) Create(ctx context.Context, q Querier, name, slug string) (*Or
 
 func (r *OrgRepo) GetBySlug(ctx context.Context, q Querier, slug string) (*Organization, error) {
 	row := q.QueryRow(ctx, `
-		SELECT id, slug, name, created_by_user_id, created_at, updated_at
+		SELECT id, slug, name, created_by_user_id, deactivated_at, deactivated_reason, created_at, updated_at
 		FROM organizations WHERE slug = $1
 	`, slug)
 
 	var o Organization
-	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedByUserID, &o.CreatedAt, &o.UpdatedAt); err != nil {
+	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedByUserID, &o.DeactivatedAt, &o.DeactivatedReason, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

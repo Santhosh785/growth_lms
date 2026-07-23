@@ -47,6 +47,9 @@ func WithRequestTx(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		rtx, err := dbctx.Begin(c.Request.Context(), pool, userID, "", "")
 		if err != nil {
+			// A failure to even open the transaction is a database-health
+			// signal, not a per-handler error — emit a throttled DB alert.
+			alertRequestTxFailure(err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}

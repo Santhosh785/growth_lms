@@ -49,6 +49,9 @@ func UploadVideo(d *AuthDeps) gin.HandlerFunc {
 
 		uploadURL, videoID, expiresAt, err := d.Bunny.CreateSignedUploadURL(ctx, libraryID)
 		if err != nil {
+			d.recordAlert(ctx, models.AlertSeverityWarning, models.AlertCategoryStorage,
+				"bunny_upload", "failed to create video upload URL: "+err.Error(),
+				map[string]any{"org_id": course.OrgID})
 			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to create upload url"})
 			return
 		}
@@ -110,6 +113,9 @@ func UploadFile(d *AuthDeps) gin.HandlerFunc {
 
 		uploadURL, expiresAt, err := d.Storage.CreateSignedUploadURL(ctx, d.Config.Supabase.StorageBucket, storageKey)
 		if err != nil {
+			d.recordAlert(ctx, models.AlertSeverityWarning, models.AlertCategoryStorage,
+				"supabase_storage", "failed to create file upload URL: "+err.Error(),
+				map[string]any{"org_id": course.OrgID, "bucket": d.Config.Supabase.StorageBucket})
 			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to create upload url"})
 			return
 		}

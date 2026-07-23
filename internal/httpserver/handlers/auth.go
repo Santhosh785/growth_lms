@@ -172,13 +172,36 @@ func Login(d *AuthDeps) gin.HandlerFunc {
 
 		session, err := d.Supabase.SignInWithPassword(c.Request.Context(), email, req.Password)
 		if err != nil {
-			recordLoginFailure(c.Request.Context(), d.Redis, email)
+			failCount := recordLoginFailure(c.Request.Context(), d.Redis, email)
 			_ = d.Audit.Record(c.Request.Context(), d.Pool, models.AuditEvent{
 				Action: "auth.login_failed", ResourceType: "profile",
 				Details:   map[string]any{"email": email},
 				IPAddress: c.ClientIP(), UserAgent: c.Request.UserAgent(),
 			})
+			// One-shot auth alert exactly when the failure threshold is first
+			// crossed (repeated failures for one account = possible brute force
+			// or credential-stuffing). checkLoginBackoff blocks further
+			// attempts while locked, so this fires once per burst, not per try.
+			if failCount == loginBackoffThreshold {
+				d.recordAlert(c.Request.Context(), models.AlertSeverityWarning, models.AlertCategoryAuth,
+					"login_backoff", "repeated failed logins for a single account (possible brute force)",
+					map[string]any{"email": email, "failures": failCount, "client_ip": c.ClientIP()})
+			}
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+
+		// Refuse a session to a suspended account. Checked via a SECURITY
+		// DEFINER helper on the raw pool (no RLS session context exists yet).
+		// A failed lookup is treated as not-suspended so a transient DB error
+		// never locks out every user, but the failed attempt is not cleared.
+		if suspended, serr := d.Profiles.IsSuspended(c.Request.Context(), d.Pool, session.User.ID); serr == nil && suspended {
+			uid := session.User.ID
+			_ = d.Audit.Record(c.Request.Context(), d.Pool, models.AuditEvent{
+				UserID: &uid, Action: "auth.login_suspended", ResourceType: "profile", ResourceID: &uid,
+				IPAddress: c.ClientIP(), UserAgent: c.Request.UserAgent(),
+			})
+			c.JSON(http.StatusForbidden, gin.H{"error": "this account has been suspended"})
 			return
 		}
 
@@ -300,20 +323,24 @@ func checkLoginBackoff(ctx context.Context, r *redis.Client, email string) (lock
 	return true, ttl
 }
 
-func recordLoginFailure(ctx context.Context, r *redis.Client, email string) {
+// recordLoginFailure increments the per-email failure counter and returns the
+// new count (0 on a Redis error). The caller uses the returned count to raise a
+// one-shot auth alert exactly when the threshold is first crossed.
+func recordLoginFailure(ctx context.Context, r *redis.Client, email string) int64 {
 	key := loginFailKey(email)
 	count, err := r.Incr(ctx, key).Result()
 	if err != nil {
-		return
+		return 0
 	}
 	if count < loginBackoffThreshold {
-		return
+		return count
 	}
 	window := loginBackoffBase * time.Duration(1<<uint(count-loginBackoffThreshold))
 	if window > loginBackoffMaxWindow {
 		window = loginBackoffMaxWindow
 	}
 	_ = r.Expire(ctx, key, window).Err()
+	return count
 }
 
 func clearLoginFailures(ctx context.Context, r *redis.Client, email string) {

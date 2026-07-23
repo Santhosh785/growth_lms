@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"growth-lms/internal/models"
 	"growth-lms/internal/worker"
 )
 
@@ -107,6 +108,12 @@ func RazorpayWebhook(d *AuthDeps) gin.HandlerFunc {
 
 		signature := c.GetHeader("X-Razorpay-Signature")
 		if !d.Payments.VerifyWebhookSignature(body, signature) {
+			// A payment webhook that fails signature verification is either a
+			// forged/misdirected call or a rotated-secret misconfiguration —
+			// both warrant an operator's attention.
+			d.recordAlert(c.Request.Context(), models.AlertSeverityWarning, models.AlertCategoryWebhook,
+				"razorpay_webhook", "payment webhook rejected: invalid signature",
+				map[string]any{"client_ip": c.ClientIP()})
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
@@ -151,6 +158,11 @@ func RazorpayWebhook(d *AuthDeps) gin.HandlerFunc {
 
 		isNew, err := d.WebhookEvents.TryRecord(c.Request.Context(), d.Pool, eventID, envelope.Event, body)
 		if err != nil {
+			// A verified payment event we cannot even record risks a dropped
+			// payment/entitlement — critical.
+			d.recordAlert(c.Request.Context(), models.AlertSeverityCritical, models.AlertCategoryWebhook,
+				"razorpay_webhook", "failed to record verified payment webhook: "+err.Error(),
+				map[string]any{"event": envelope.Event, "event_id": eventID})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record webhook event"})
 			return
 		}
@@ -166,6 +178,12 @@ func RazorpayWebhook(d *AuthDeps) gin.HandlerFunc {
 			EventType: envelope.Event,
 			Payload:   body,
 		}); err != nil {
+			// Recorded but not enqueued: the idempotency row now exists, so a
+			// Razorpay retry would be accept-and-ignored — the event would
+			// never be processed. Critical, and needs manual re-drive.
+			d.recordAlert(c.Request.Context(), models.AlertSeverityCritical, models.AlertCategoryWebhook,
+				"razorpay_webhook", "verified payment webhook recorded but failed to enqueue: "+err.Error(),
+				map[string]any{"event": envelope.Event, "event_id": eventID})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue"})
 			return
 		}

@@ -10,7 +10,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"growth-lms/internal/metrics"
 )
+
+// MetricsHandler serves the process-wide metrics registry in Prometheus text
+// exposition format (Task 10 observability). Content-Type matches the
+// Prometheus 0.0.4 text format so a scraper negotiates it correctly.
+func MetricsHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		metrics.Default.WriteProm(c.Writer)
+	}
+}
 
 // Healthz reports liveness only: the process is running and able to serve
 // HTTP. It never checks dependencies, so it stays fast and cannot be taken

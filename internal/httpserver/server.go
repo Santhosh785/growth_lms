@@ -20,6 +20,7 @@ import (
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/httpserver/webconsole"
 	"growth-lms/internal/media"
+	"growth-lms/internal/metrics"
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
 	"growth-lms/internal/quota"
@@ -39,7 +40,12 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	}
 
 	engine := gin.New()
-	engine.Use(gin.Recovery())
+	engine.Use(middleware.RequestID())
+	// Task 10: our own panic recovery (structured, request-ID-correlated,
+	// metric-counted) replaces gin.Recovery; mounted after RequestID so a
+	// recovered panic is logged with its request ID.
+	engine.Use(middleware.Recover(logger, metrics.Default))
+	engine.Use(middleware.Metrics(metrics.Default))
 
 	if cfg.TrustProxy {
 		// Proxy count of 1 assumes a single nginx hop in front of the app,
@@ -49,12 +55,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		_ = engine.SetTrustedProxies(nil)
 	}
 
-	engine.Use(middleware.RequestID())
 	engine.Use(middleware.RequestLogger(logger))
 	engine.Use(corsMiddleware(cfg))
 
 	engine.GET("/healthz", handlers.Healthz)
 	engine.GET("/readyz", handlers.Readyz(db, redisClient))
+	// Task 10: Prometheus metrics scrape endpoint (request counts/latency,
+	// panic count, operational gauges). Plain-text exposition, no auth — it
+	// exposes no tenant data, only aggregate counters; restrict at the
+	// reverse proxy / network layer in production if desired.
+	engine.GET("/metrics", handlers.MetricsHandler())
 
 	if cfg.Env == config.EnvDevelopment {
 		// Manual-testing-only console for the JSON API; never mounted outside development.
@@ -198,7 +208,13 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		QuotaRepo:    quotaRepo,
 		Quota:        quota.New(planRepo, quotaRepo, aiUsageRepo),
 		Inspector:    inspector,
+		AdminOps:     models.NewAdminOpsRepo(),
 	}
+
+	// Task 10: wire the process-wide database-alert sink so WithRequestTx can
+	// raise a throttled `database` alert if it ever fails to open a request
+	// transaction (Postgres unreachable / pool exhausted).
+	middleware.ConfigureDBAlerting(db, deps.Alerts)
 
 	// Public landing page: OptionalAuthenticate resolves the session
 	// cookie if present without aborting, so HomePage can redirect an
@@ -1025,6 +1041,23 @@ func registerAdminAPIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpoo
 
 	admin.GET("/jobs", handlers.JobsDashboard(d))
 
+	// Task 10 administrative actions: user directory + suspend/reactivate,
+	// org deactivate/reactivate, course takedown/restore, and the audit log.
+	// Each handler also passes through a SECURITY DEFINER function that
+	// re-checks platform ownership, so these are defence-in-depth over the
+	// RequirePlatformOwner group gate.
+	admin.GET("/users", handlers.ListUsers(d))
+	admin.POST("/users/:user_id/suspend", handlers.SuspendUser(d))
+	admin.POST("/users/:user_id/reactivate", handlers.ReactivateUser(d))
+
+	admin.POST("/orgs/:org_slug/deactivate", handlers.DeactivateOrg(d))
+	admin.POST("/orgs/:org_slug/reactivate", handlers.ReactivateOrg(d))
+
+	admin.POST("/courses/:course_id/takedown", handlers.TakedownCourse(d))
+	admin.POST("/courses/:course_id/restore", handlers.RestoreCourse(d))
+
+	admin.GET("/audit", handlers.ListAuditEvents(d))
+
 	// --- Org-owner surface --------------------------------------------------
 	org := authed.Group("/orgs/:org_slug")
 	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
@@ -1038,6 +1071,8 @@ func registerAdminAPIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpoo
 
 	org.GET("/alerts", ownerOnly, handlers.ListOrgAlerts(d))
 	org.POST("/alerts/:alert_id/resolve", ownerOnly, handlers.ResolveOrgAlert(d))
+
+	org.GET("/audit", ownerOnly, handlers.ListOrgAuditEvents(d))
 }
 
 // registerCommunityRoutes mounts Task 7's discussions, moderation,

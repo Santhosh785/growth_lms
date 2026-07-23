@@ -130,4 +130,7 @@ type AuthDeps struct {
 	QuotaRepo    *models.QuotaRepo
 	Quota        *quota.Service
 	Inspector    *asynq.Inspector
+	// Task 10: platform-owner administrative actions (suspend/deactivate/
+	// takedown) and the audit-log viewer.
+	AdminOps *models.AdminOpsRepo
 }
