@@ -37,16 +37,17 @@ type Config struct {
 	Port    int
 	BaseURL string
 
-	Database DatabaseConfig
-	Supabase SupabaseConfig
-	Redis    RedisConfig
-	BunnyNet BunnyNetConfig
-	Resend   ResendConfig
-	Razorpay RazorpayConfig
-	AI       AIConfig
-	Podcasts PodcastsConfig
-	CodeExec CodeExecConfig
-	Scorm    ScormConfig
+	Database    DatabaseConfig
+	Supabase    SupabaseConfig
+	Redis       RedisConfig
+	BunnyNet    BunnyNetConfig
+	Resend      ResendConfig
+	Razorpay    RazorpayConfig
+	AI          AIConfig
+	Podcasts    PodcastsConfig
+	CodeExec    CodeExecConfig
+	Scorm       ScormConfig
+	Simulations SimulationsConfig
 
 	CORS        CORSConfig
 	TrustProxy  bool
@@ -150,6 +151,18 @@ type CodeExecConfig struct {
 // two-flag gate (platform Enabled AND the org's scorm_enabled toggle).
 type ScormConfig struct {
 	Enabled bool
+}
+
+// SimulationsConfig configures Task 9's interactive simulations & diagrams
+// module. Entirely optional (not in the `required` list): with Enabled false —
+// the default — the module is dark platform-wide regardless of any org's own
+// simulations_enabled toggle, giving an operator a single kill-switch. Mirrors
+// ScormConfig's flag-only two-flag gate. MaxSourceBytes / MaxParameters bound a
+// single authored artifact (0 = the internal/simulations package default).
+type SimulationsConfig struct {
+	Enabled        bool
+	MaxSourceBytes int
+	MaxParameters  int
 }
 
 type CORSConfig struct {
@@ -275,6 +288,11 @@ func Load() (*Config, error) {
 		},
 		Scorm: ScormConfig{
 			Enabled: getEnvBool("LMS_SCORM_ENABLED", false),
+		},
+		Simulations: SimulationsConfig{
+			Enabled:        getEnvBool("LMS_SIMULATIONS_ENABLED", false),
+			MaxSourceBytes: int(getEnvInt64("LMS_SIMULATIONS_MAX_SOURCE_BYTES", 0)),
+			MaxParameters:  int(getEnvInt64("LMS_SIMULATIONS_MAX_PARAMETERS", 0)),
 		},
 		CodeExec: CodeExecConfig{
 			Enabled:              getEnvBool("LMS_CODE_EXEC_ENABLED", false),

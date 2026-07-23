@@ -13,6 +13,7 @@ import (
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
 	"growth-lms/internal/scorm"
+	"growth-lms/internal/simulations"
 )
 
 // AuthDeps bundles everything the auth/org/membership/invitation/api-token
@@ -82,6 +83,9 @@ type AuthDeps struct {
 	NotificationPrefs *models.NotificationPreferenceRepo
 	UnsubscribeTokens *models.UnsubscribeTokenRepo
 	Boards            *models.CollabBoardRepo
+	// Task 9: improved collaborative boards (versioning + templates).
+	BoardVersions  *models.CollabBoardVersionRepo
+	BoardTemplates *models.CollabBoardTemplateRepo
 
 	// Task 8: analytics, search, SEO, themes, and public pages.
 	AnalyticsEvents  *models.AnalyticsEventRepo
@@ -111,4 +115,9 @@ type AuthDeps struct {
 	Scorm         *scorm.Service
 	ScormPackages *models.ScormPackageRepo
 	ScormAttempts *models.ScormAttemptRepo
+
+	// Task 9: interactive simulations & diagrams.
+	Simulations        *simulations.Service
+	SimulationRepo     *models.SimulationRepo
+	SimulationProgress *models.SimulationProgressRepo
 }

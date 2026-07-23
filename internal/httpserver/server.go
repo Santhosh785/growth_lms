@@ -25,6 +25,7 @@ import (
 	"growth-lms/internal/ratelimit"
 	"growth-lms/internal/realtime"
 	"growth-lms/internal/scorm"
+	"growth-lms/internal/simulations"
 	"growth-lms/internal/worker"
 )
 
@@ -144,6 +145,8 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		NotificationPrefs: models.NewNotificationPreferenceRepo(),
 		UnsubscribeTokens: models.NewUnsubscribeTokenRepo(),
 		Boards:            models.NewCollabBoardRepo(),
+		BoardVersions:     models.NewCollabBoardVersionRepo(),
+		BoardTemplates:    models.NewCollabBoardTemplateRepo(),
 
 		AnalyticsEvents:  models.NewAnalyticsEventRepo(),
 		AnalyticsRollups: models.NewAnalyticsRollupRepo(),
@@ -173,6 +176,10 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Scorm:         scorm.NewService(),
 		ScormPackages: models.NewScormPackageRepo(),
 		ScormAttempts: models.NewScormAttemptRepo(),
+
+		Simulations:        simulations.NewService(cfg.Simulations.MaxSourceBytes, cfg.Simulations.MaxParameters),
+		SimulationRepo:     models.NewSimulationRepo(),
+		SimulationProgress: models.NewSimulationProgressRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -204,6 +211,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerPodcastRoutes(engine, deps, db)
 	registerCodeExecRoutes(engine, deps, db)
 	registerScormRoutes(engine, deps, db)
+	registerSimulationsRoutes(engine, deps, db)
 	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
@@ -511,6 +519,52 @@ func registerScormRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.P
 	org.POST("/scorm/attempts/:attemptId/commit", handlers.CommitScormRuntime(d))
 	org.POST("/scorm/attempts/:attemptId/finish", handlers.FinishScormAttempt(d))
 	org.GET("/scorm/attempts", handlers.ListMyScormAttempts(d))
+}
+
+// registerSimulationsRoutes mounts Task 9's interactive simulations & diagrams
+// routes — all authed and org-scoped, reusing the same ResolveOrg/RequireRole
+// pattern. Authoring (create/validate a spec, edit, publish, delete) and
+// per-simulation reporting are owner/teacher gated; browsing the published
+// catalog, recording interaction progress, and viewing one's own progress are
+// open to any authenticated org member (RLS scopes progress to the caller);
+// settings are owner-only. Every handler independently enforces the two-flag
+// feature gate (platform LMS_SIMULATIONS_ENABLED AND the org's
+// simulations_enabled) via simGate — the route gating here is authz only. There
+// is no public/anonymous surface: a learner always interacts inside an
+// authenticated session.
+func registerSimulationsRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	// Settings (owner).
+	org.GET("/simulations/settings", middleware.RequireRole(auth.RoleOwner), handlers.GetSimulationSettings(d))
+	org.PATCH("/simulations/settings", middleware.RequireRole(auth.RoleOwner), handlers.UpdateSimulationSettings(d))
+
+	// Learner-facing collection routes (any member). Registered as distinct
+	// static segments so they don't collide with the :simulationId param below.
+	org.GET("/simulations/catalog", handlers.ListSimulationCatalog(d))
+	org.GET("/simulations/progress", handlers.ListMySimulationProgress(d))
+
+	// Authoring collection + item (owner/teacher). The spec/config are validated
+	// server-side on create/update; a bad payload is a 400 with the reason.
+	org.POST("/simulations", authoring, handlers.CreateSimulation(d))
+	org.GET("/simulations", authoring, handlers.ListSimulations(d))
+	org.GET("/simulations/:simulationId", authoring, handlers.GetSimulation(d))
+	org.PATCH("/simulations/:simulationId", authoring, handlers.UpdateSimulation(d))
+	org.POST("/simulations/:simulationId/publish", authoring, handlers.SetSimulationPublished(d))
+	org.DELETE("/simulations/:simulationId", authoring, handlers.DeleteSimulation(d))
+	org.GET("/simulations/:simulationId/report", authoring, handlers.SimulationReport(d))
+
+	// Per-simulation learner runtime (any member): record an interaction and
+	// read one's own progress.
+	org.POST("/simulations/:simulationId/progress", handlers.RecordSimulationProgress(d))
+	org.GET("/simulations/:simulationId/progress", handlers.GetMySimulationProgress(d))
 }
 
 // registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org
@@ -939,6 +993,15 @@ func registerCommunityRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 	org.GET("/notification-preferences", handlers.GetNotificationPreferences(d))
 	org.PATCH("/notification-preferences", handlers.UpdateNotificationPreference(d))
 
+	// Task 9 "improved collaborative boards": org-level board templates. Any
+	// member may read/seed from a template; teachers/owners author them.
+	teacherOrOwner := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+	org.POST("/board-templates", teacherOrOwner, handlers.CreateBoardTemplate(d))
+	org.GET("/board-templates", handlers.ListBoardTemplates(d))
+	org.GET("/board-templates/:templateId", handlers.GetBoardTemplate(d))
+	org.PATCH("/board-templates/:templateId", teacherOrOwner, handlers.UpdateBoardTemplate(d))
+	org.DELETE("/board-templates/:templateId", teacherOrOwner, handlers.DeleteBoardTemplate(d))
+
 	// Course-scoped: course discussion threads + collaborative boards.
 	course := authed.Group("/courses/:courseId")
 	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
@@ -972,6 +1035,13 @@ func registerCommunityRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 	board.Use(middleware.ResolveBoardOrg(d.Boards, d.Memberships, d.Profiles))
 	board.GET("", handlers.GetBoard(d))
 	board.DELETE("", handlers.DeleteBoard(d))
+	// Task 9 "improved collaborative boards": versioned checkpoints. Any member
+	// may save/restore a checkpoint; a checkpoint is pruned by its author or a
+	// moderator/owner (enforced in-handler + RLS).
+	board.POST("/versions", handlers.SaveBoardVersion(d))
+	board.GET("/versions", handlers.ListBoardVersions(d))
+	board.POST("/versions/:versionId/restore", handlers.RestoreBoardVersion(d))
+	board.DELETE("/versions/:versionId", handlers.DeleteBoardVersion(d))
 
 	// Recipient-scoped notifications. Paths avoid a param/static segment clash
 	// at the same tree position (gin would panic): list, read-all, and

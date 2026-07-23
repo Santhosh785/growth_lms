@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,9 +17,13 @@ import (
 
 type createBoardRequest struct {
 	Title string `json:"title" binding:"required"`
+	// TemplateID optionally seeds the new board's snapshot from an org board
+	// template (Task 9 "improved collaborative boards"). Empty = a blank board.
+	TemplateID string `json:"template_id"`
 }
 
-// CreateBoard creates a board under a course.
+// CreateBoard creates a board under a course, optionally seeded from an org
+// board template.
 func CreateBoard(d *AuthDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req createBoardRequest
@@ -29,11 +34,32 @@ func CreateBoard(d *AuthDeps) gin.HandlerFunc {
 		course, _ := middleware.CourseFromGin(c)
 		ac, _ := middleware.AuthContextFromGin(c)
 		tx, _ := middleware.RequestTxFromGin(c)
+		ctx := c.Request.Context()
 
-		board, err := d.Boards.Create(c.Request.Context(), tx, course.OrgID, course.ID, req.Title, ac.UserID)
+		// Resolve an optional template first so a bad template_id fails before a
+		// board is created. The template must belong to the same org (RLS also
+		// enforces this).
+		var seed json.RawMessage
+		if req.TemplateID != "" {
+			tmpl, err := d.BoardTemplates.Get(ctx, tx, req.TemplateID)
+			if err != nil || tmpl.OrgID != course.OrgID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "template not found"})
+				return
+			}
+			seed = tmpl.Snapshot
+		}
+
+		board, err := d.Boards.Create(ctx, tx, course.OrgID, course.ID, req.Title, ac.UserID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
+		}
+		// Seed the snapshot from the template, if any. A failure here leaves a
+		// usable blank board, so surface it but don't fail the create.
+		if len(seed) > 0 {
+			if err := d.Boards.SaveSnapshot(ctx, tx, board.ID, seed, ac.UserID); err == nil {
+				board.Snapshot = seed
+			}
 		}
 		c.JSON(http.StatusCreated, boardResponse(board))
 	}
