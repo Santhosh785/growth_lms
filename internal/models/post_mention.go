@@ -40,6 +40,12 @@ func ParseMentionTokens(body string) []string {
 	return out
 }
 
+// StripMentionTokens removes @[uuid] tokens from a body, for rendering a
+// plain-text preview (email/notification snippet) that doesn't leak raw uuids.
+func StripMentionTokens(body string) string {
+	return mentionTokenRe.ReplaceAllString(body, "")
+}
+
 // AddMany inserts mention rows for a post, ignoring duplicates. Non-members
 // are silently skipped by the WITH CHECK (is_org_member) policy only if the
 // caller filters first; callers should pass user IDs already validated as

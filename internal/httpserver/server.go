@@ -165,6 +165,14 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerLearnerUIRoutes(engine, deps, db)
 	registerCommerceRoutes(engine, deps, db, redisClient)
 	registerAdminUIRoutes(engine, deps, db)
+	registerCommunityRoutes(engine, deps, db)
+
+	// PUBLIC, unauthenticated one-click unsubscribe (Task 7): resolved via
+	// the resolve_unsubscribe SECURITY DEFINER function against the pool, so
+	// no Authenticate/WithRequestTx — same public-route pattern as
+	// certificate verification below. GET confirms, POST applies.
+	engine.GET("/unsubscribe/:token", handlers.UnsubscribePage(deps))
+	engine.POST("/unsubscribe/:token", handlers.Unsubscribe(deps))
 
 	// PUBLIC, unauthenticated certificate verification (Task 5 Stage 6):
 	// mounted directly on the engine, no Authenticate/WithRequestTx at
@@ -625,6 +633,84 @@ func registerAdminUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	platformOwnerOnly := middleware.RequirePlatformOwner(d.Profiles)
 	authed.GET("/admin/organizations", platformOwnerOnly, handlers.PlatformAdminDashboardPage(d))
 	authed.GET("/admin/organizations/:org_slug", platformOwnerOnly, handlers.PlatformAdminOrgDetailPage(d))
+}
+
+// registerCommunityRoutes mounts Task 7's discussions, moderation,
+// notifications, preferences, and collaborative-board JSON API. Everything
+// requires authentication and a request-scoped transaction so RLS session
+// variables are in effect. Org-scoped surfaces resolve via ResolveOrg or
+// ResolveCourseOrg; thread/post/board action routes are keyed only by a row
+// id, so they resolve org context from the row itself via the Task 7
+// Resolve{Thread,Post,Board}Org middleware. Moderator/owner-only actions are
+// additionally gated by RequireRole (defense-in-depth over is_org_moderator
+// RLS). Notification routes are recipient-scoped (RLS by recipient_id), so
+// they carry no org segment.
+func registerCommunityRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	moderatorOrOwner := middleware.RequireRole(auth.RoleModerator, auth.RoleOwner)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	// Org-scoped: org-wide threads, broadcasts, moderation queue, preferences.
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	org.POST("/threads", handlers.CreateOrgThread(d))
+	org.GET("/threads", handlers.ListOrgThreads(d))
+	org.POST("/broadcasts", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.CreateBroadcast(d))
+	org.GET("/reports", moderatorOrOwner, handlers.ListReports(d))
+	org.POST("/reports/:reportId/resolve", moderatorOrOwner, handlers.ResolveReport(d))
+	org.POST("/reports/:reportId/dismiss", moderatorOrOwner, handlers.DismissReport(d))
+	org.GET("/notification-preferences", handlers.GetNotificationPreferences(d))
+	org.PATCH("/notification-preferences", handlers.UpdateNotificationPreference(d))
+
+	// Course-scoped: course discussion threads + collaborative boards.
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+	course.POST("/threads", handlers.CreateCourseThread(d))
+	course.GET("/threads", handlers.ListCourseThreads(d))
+	course.POST("/boards", handlers.CreateBoard(d))
+	course.GET("/boards", handlers.ListBoards(d))
+
+	// Thread-scoped (org resolved from the thread row).
+	thread := authed.Group("/threads/:threadId")
+	thread.Use(middleware.ResolveThreadOrg(d.Threads, d.Memberships, d.Profiles))
+	thread.GET("", handlers.GetThread(d))
+	thread.GET("/members", handlers.ThreadMembers(d))
+	thread.POST("/posts", handlers.CreatePost(d))
+	thread.POST("/pin", moderatorOrOwner, handlers.SetThreadPinned(d))
+	thread.POST("/lock", moderatorOrOwner, handlers.SetThreadLocked(d))
+
+	// Post-scoped (org resolved from the post row). Edit/delete are author-or-
+	// moderator (checked in-handler + RLS); hide is moderator/owner only.
+	post := authed.Group("/posts/:postId")
+	post.Use(middleware.ResolvePostOrg(d.Posts, d.Memberships, d.Profiles))
+	post.PATCH("", handlers.EditPost(d))
+	post.DELETE("", handlers.DeletePost(d))
+	post.POST("/reactions", handlers.ReactToPost(d))
+	post.DELETE("/reactions", handlers.Unreact(d))
+	post.POST("/report", handlers.ReportPost(d))
+	post.POST("/hide", moderatorOrOwner, handlers.HidePost(d))
+
+	// Board-scoped (org resolved from the board row).
+	board := authed.Group("/boards/:boardId")
+	board.Use(middleware.ResolveBoardOrg(d.Boards, d.Memberships, d.Profiles))
+	board.GET("", handlers.GetBoard(d))
+	board.DELETE("", handlers.DeleteBoard(d))
+
+	// Recipient-scoped notifications. Paths avoid a param/static segment clash
+	// at the same tree position (gin would panic): list, read-all, and
+	// mark-read/:id all use a distinct static second segment.
+	authed.GET("/notifications", handlers.ListNotifications(d))
+	authed.POST("/notifications/read-all", handlers.MarkAllNotificationsRead(d))
+	authed.POST("/notifications/mark-read/:id", handlers.MarkNotificationRead(d))
+
+	// Nav unread badge (HTML fragment, cookie auth) — top-level so HTMX in
+	// server-rendered pages can poll it.
+	navAuthed := engine.Group("")
+	navAuthed.Use(middleware.Authenticate(d.Verifier))
+	navAuthed.Use(middleware.WithRequestTx(db))
+	navAuthed.GET("/notifications/unread-count", handlers.NotificationsUnreadCount(d))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
