@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,6 +17,21 @@ type Organization struct {
 	CreatedByUserID string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// OrgBranding is the Task 8 branding/theme/SEO/custom-domain surface on
+// organizations, split out from Organization because most callers (any
+// org-scoped query) never need it — only the settings page and the
+// public site renderer do.
+type OrgBranding struct {
+	LogoURL                 *string
+	FaviconURL              *string
+	ThemeJSON               json.RawMessage
+	MetaDescription         string
+	OGImageURL              *string
+	CustomDomain            *string
+	DomainVerificationToken *string
+	DomainVerifiedAt        *time.Time
 }
 
 type OrgRepo struct{}
@@ -143,6 +159,99 @@ func (r *OrgRepo) ListAll(ctx context.Context, q Querier) ([]*Organization, erro
 		return nil, fmt.Errorf("models: list all organizations: %w", err)
 	}
 	return out, nil
+}
+
+// GetBranding returns the Task 8 branding/theme/SEO/domain fields for an
+// org, looked up by slug (the settings page and public renderer both
+// start from a slug, never an ID).
+func (r *OrgRepo) GetBranding(ctx context.Context, q Querier, slug string) (*OrgBranding, error) {
+	row := q.QueryRow(ctx, `
+		SELECT logo_url, favicon_url, theme_json, meta_description, og_image_url,
+		       custom_domain, domain_verification_token, domain_verified_at
+		FROM organizations WHERE slug = $1
+	`, slug)
+
+	var b OrgBranding
+	if err := row.Scan(&b.LogoURL, &b.FaviconURL, &b.ThemeJSON, &b.MetaDescription, &b.OGImageURL,
+		&b.CustomDomain, &b.DomainVerificationToken, &b.DomainVerifiedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("models: get org branding: %w", err)
+	}
+	return &b, nil
+}
+
+// UpdateBranding overwrites the logo/favicon/theme/SEO fields for an org.
+// Custom-domain fields are managed separately (SetCustomDomain/
+// MarkDomainVerified) since setting a domain requires generating a fresh
+// verification token, not a plain field overwrite.
+func (r *OrgRepo) UpdateBranding(ctx context.Context, q Querier, orgID string, logoURL, faviconURL *string, themeJSON json.RawMessage, metaDescription string, ogImageURL *string) error {
+	if themeJSON == nil {
+		themeJSON = json.RawMessage(`{}`)
+	}
+	tag, err := q.Exec(ctx, `
+		UPDATE organizations
+		SET logo_url = $2, favicon_url = $3, theme_json = $4, meta_description = $5,
+		    og_image_url = $6, updated_at = now()
+		WHERE id = $1
+	`, orgID, logoURL, faviconURL, themeJSON, metaDescription, ogImageURL)
+	if err != nil {
+		return fmt.Errorf("models: update org branding: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetCustomDomain assigns a candidate custom domain to an org and stores
+// a fresh verification token; domain_verified_at is reset to NULL so a
+// previously-verified domain must be re-verified if it's ever changed.
+func (r *OrgRepo) SetCustomDomain(ctx context.Context, q Querier, orgID, domain, verificationToken string) error {
+	tag, err := q.Exec(ctx, `
+		UPDATE organizations
+		SET custom_domain = $2, domain_verification_token = $3, domain_verified_at = NULL, updated_at = now()
+		WHERE id = $1
+	`, orgID, domain, verificationToken)
+	if err != nil {
+		return fmt.Errorf("models: set org custom domain: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkDomainVerified records a successful DNS TXT verification (see
+// internal/httpserver/handlers domain verification handler, which does
+// the actual net.LookupTXT check before calling this).
+func (r *OrgRepo) MarkDomainVerified(ctx context.Context, q Querier, orgID string) error {
+	tag, err := q.Exec(ctx, `UPDATE organizations SET domain_verified_at = now(), updated_at = now() WHERE id = $1`, orgID)
+	if err != nil {
+		return fmt.Errorf("models: mark org domain verified: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetByVerifiedCustomDomain resolves an org by its custom domain, but
+// only once that domain has passed verification — an org can point
+// custom_domain at a not-yet-verified hostname without that hostname
+// being able to serve the org's site.
+func (r *OrgRepo) GetByVerifiedCustomDomain(ctx context.Context, q Querier, domain string) (*Organization, error) {
+	row := q.QueryRow(ctx, `SELECT id, slug, name FROM resolve_org_by_domain($1)`, domain)
+
+	var o Organization
+	if err := row.Scan(&o.ID, &o.Slug, &o.Name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("models: get organization by custom domain: %w", err)
+	}
+	return &o, nil
 }
 
 // SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID

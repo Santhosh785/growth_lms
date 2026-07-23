@@ -69,6 +69,43 @@ func (r *CourseRepo) Get(ctx context.Context, q Querier, id string) (*Course, er
 	return scanCourse(row)
 }
 
+// PublishedCourse is the public-facing projection of a course, returned
+// by ListPublished for anonymous consumers (sitemap, embeddable catalog,
+// public org landing page) that have no org membership to satisfy
+// courses_select's RLS policy.
+type PublishedCourse struct {
+	ID            string
+	Title         string
+	Description   string
+	CoverImageURL *string
+	PublishedAt   *time.Time
+}
+
+// ListPublished calls the list_published_courses() SECURITY DEFINER SQL
+// function (migration 000009) rather than a plain SELECT, since the
+// caller here has no app.current_user_id/app.current_org_id session
+// context at all.
+func (r *CourseRepo) ListPublished(ctx context.Context, q Querier, orgID string) ([]PublishedCourse, error) {
+	rows, err := q.Query(ctx, `SELECT id, title, description, cover_image_url, published_at FROM list_published_courses($1)`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("models: list published courses: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PublishedCourse
+	for rows.Next() {
+		var c PublishedCourse
+		if err := rows.Scan(&c.ID, &c.Title, &c.Description, &c.CoverImageURL, &c.PublishedAt); err != nil {
+			return nil, fmt.Errorf("models: scan published course: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("models: list published courses: %w", err)
+	}
+	return out, nil
+}
+
 func (r *CourseRepo) List(ctx context.Context, q Querier, orgID string) ([]*Course, error) {
 	rows, err := q.Query(ctx, `SELECT `+courseColumns+` FROM courses WHERE org_id = $1 ORDER BY updated_at DESC`, orgID)
 	if err != nil {

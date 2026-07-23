@@ -141,6 +141,11 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		NotificationPrefs: models.NewNotificationPreferenceRepo(),
 		UnsubscribeTokens: models.NewUnsubscribeTokenRepo(),
 		Boards:            models.NewCollabBoardRepo(),
+
+		AnalyticsEvents:  models.NewAnalyticsEventRepo(),
+		AnalyticsRollups: models.NewAnalyticsRollupRepo(),
+		OrgPages:         models.NewOrgPageRepo(),
+		Search:           models.NewSearchRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -167,6 +172,8 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerCommerceRoutes(engine, deps, db, redisClient)
 	registerAdminUIRoutes(engine, deps, db)
 	registerCommunityRoutes(engine, deps, db)
+	registerGrowthRoutes(engine, deps, db)
+	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
 	// Board ops are debounce-persisted to collab_boards.snapshot via the
@@ -267,6 +274,53 @@ func registerOrgRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Poo
 	// context to resolve.
 	authed.POST("/invitations/:token/accept", handlers.AcceptInvitation(d))
 	authed.POST("/invitations/:token/decline", handlers.DeclineInvitation(d))
+}
+
+// registerGrowthRoutes mounts Task 8's authed, org-scoped routes:
+// analytics, search, branding/theme settings, the landing-page builder,
+// and custom-domain management. Reuses the exact ResolveOrg/RequireRole
+// pattern registerOrgRoutes establishes above.
+func registerGrowthRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	org.GET("/analytics", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.OrgAnalytics(d))
+	org.GET("/search", handlers.Search(d))
+
+	org.GET("/branding", middleware.RequireRole(auth.RoleOwner), handlers.GetBranding(d))
+	org.PATCH("/branding", middleware.RequireRole(auth.RoleOwner), handlers.UpdateBranding(d))
+
+	org.POST("/domain", middleware.RequireRole(auth.RoleOwner), handlers.SetCustomDomain(d))
+	org.POST("/domain/verify", middleware.RequireRole(auth.RoleOwner), handlers.VerifyDomain(d))
+
+	org.GET("/pages", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.ListOrgPages(d))
+	org.PUT("/pages/:slug", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.UpsertOrgPage(d))
+	org.DELETE("/pages/:slug", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.DeleteOrgPage(d))
+
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+	course.GET("/offers/:offerId/embed-link", handlers.CourseCheckoutLink(d))
+}
+
+// registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org
+// site surfaces: the landing-page builder's rendered output, SEO
+// (sitemap/robots), and the embeddable course catalog. No Authenticate/
+// WithRequestTx/ResolveOrg at all — these run as anonymous visitors and
+// resolve everything through SECURITY DEFINER SQL functions (see
+// public_site.go's package doc comment), the same public-route pattern
+// certificate verification and unsubscribe already use.
+func registerPublicSiteRoutes(engine *gin.Engine, d *handlers.AuthDeps) {
+	site := engine.Group("/o/:org_slug")
+	site.GET("", handlers.PublicOrgHome(d))
+	site.GET("/pages/:slug", handlers.PublicOrgPage(d))
+	site.GET("/sitemap.xml", handlers.Sitemap(d))
+	site.GET("/robots.txt", handlers.Robots(d))
+
+	engine.GET("/embed/o/:org_slug/catalog", handlers.EmbedCatalog(d))
 }
 
 // registerCourseRoutes mounts Task 4's course-domain routes. Course-scoped

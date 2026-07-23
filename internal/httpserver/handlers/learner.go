@@ -76,6 +76,7 @@ func EnrollCourse(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
+		_ = d.AnalyticsEvents.Record(ctx, tx, course.OrgID, models.EventEnrollment, ac.UserID, course.ID, nil)
 		c.JSON(http.StatusCreated, learnerCourseAccessResponse(access))
 	}
 }
@@ -293,6 +294,7 @@ func CompleteLesson(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
+		_ = d.AnalyticsEvents.Record(ctx, tx, course.OrgID, models.EventLessonCompletion, ac.UserID, course.ID, nil)
 		c.JSON(http.StatusOK, lessonProgressResponse(progress))
 	}
 }

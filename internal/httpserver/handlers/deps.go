@@ -79,4 +79,10 @@ type AuthDeps struct {
 	NotificationPrefs *models.NotificationPreferenceRepo
 	UnsubscribeTokens *models.UnsubscribeTokenRepo
 	Boards            *models.CollabBoardRepo
+
+	// Task 8: analytics, search, SEO, themes, and public pages.
+	AnalyticsEvents  *models.AnalyticsEventRepo
+	AnalyticsRollups *models.AnalyticsRollupRepo
+	OrgPages         *models.OrgPageRepo
+	Search           *models.SearchRepo
 }

@@ -96,6 +96,7 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 	go runPublishSweepLoop(sweepCtx, pool, logger, publishSweepInterval)
 	go runAbandonOrdersSweepLoop(sweepCtx, pool, logger, abandonOrdersSweepInterval)
 	go runExpireEntitlementsSweepLoop(sweepCtx, pool, logger, expireEntitlementsSweepInterval)
+	go runAnalyticsRollupSweepLoop(sweepCtx, pool, logger, analyticsRollupSweepInterval)
 
 	logger.Info("worker starting", "env", cfg.Env)
 	return srv.Run(mux)

@@ -91,6 +91,7 @@ func evaluateAndIssueCertificateIfComplete(ctx context.Context, tx models.Querie
 	if _, err := d.Certificates.Create(ctx, tx, course.OrgID, learnerID, courseID, certificateID, storagePath); err != nil {
 		return fmt.Errorf("handlers: create certificate row: %w", err)
 	}
+	_ = d.AnalyticsEvents.Record(ctx, tx, course.OrgID, models.EventCertificateIssued, learnerID, course.ID, nil)
 
 	// Stage 7: enqueue-only, never call Resend synchronously in the
 	// request path (spec + acceptance criterion). A failure to enqueue

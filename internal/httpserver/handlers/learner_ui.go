@@ -87,6 +87,8 @@ func CourseLearnPage(d *AuthDeps) gin.HandlerFunc {
 		}
 		hasAccess := staff || enrolled
 
+		_ = d.AnalyticsEvents.Record(ctx, tx, course.OrgID, models.EventCourseView, ac.UserID, course.ID, nil)
+
 		var chapterViews []learnChapterView
 		var completedCount, totalCount int
 		var percentage float64
@@ -210,6 +212,8 @@ func LessonPlayerPage(d *AuthDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
+
+		_ = d.AnalyticsEvents.Record(ctx, tx, course.OrgID, models.EventLessonStart, ac.UserID, course.ID, nil)
 
 		chapters, err := d.Chapters.ListByCourse(ctx, tx, course.ID)
 		if err != nil {

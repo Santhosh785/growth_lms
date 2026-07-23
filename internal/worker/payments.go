@@ -136,6 +136,7 @@ type razorpayWebhookDeps struct {
 	discountCodes *models.DiscountCodeRepo
 	paymentAudit  *models.PaymentAuditRepo
 	audit         *models.AuditRepo
+	analytics     *models.AnalyticsEventRepo
 }
 
 func newRazorpayWebhookDeps(pool *pgxpool.Pool, asyncClient *asynq.Client, logger *slog.Logger) *razorpayWebhookDeps {
@@ -155,6 +156,7 @@ func newRazorpayWebhookDeps(pool *pgxpool.Pool, asyncClient *asynq.Client, logge
 		discountCodes: models.NewDiscountCodeRepo(),
 		paymentAudit:  models.NewPaymentAuditRepo(),
 		audit:         models.NewAuditRepo(),
+		analytics:     models.NewAnalyticsEventRepo(),
 	}
 }
 
@@ -383,6 +385,8 @@ func (d *razorpayWebhookDeps) handlePaymentCaptured(ctx context.Context, body ra
 		return fmt.Errorf("worker: load course %s for receipt email: %w", offer.CourseID, err)
 	}
 
+	_ = d.analytics.Record(ctx, tx, order.OrgID, models.EventPurchase, order.LearnerID, offer.CourseID, nil)
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("worker: commit payment.captured transaction: %w", err)
 	}
@@ -603,6 +607,8 @@ func (d *razorpayWebhookDeps) handleRefundProcessed(ctx context.Context, body ra
 	}); err != nil {
 		return fmt.Errorf("worker: record payment audit trail for refund %s: %w", refund.ID, err)
 	}
+
+	_ = d.analytics.Record(ctx, tx, payment.OrgID, models.EventRefund, "", "", nil)
 
 	return tx.Commit(ctx)
 }
