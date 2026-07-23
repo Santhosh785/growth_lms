@@ -291,6 +291,31 @@ func (r *OrgRepo) SetAISettings(ctx context.Context, q Querier, orgID string, en
 	return nil
 }
 
+// GetPodcastsEnabled reads an org's Task 9 Podcasts feature flag.
+func (r *OrgRepo) GetPodcastsEnabled(ctx context.Context, q Querier, orgID string) (bool, error) {
+	var enabled bool
+	err := q.QueryRow(ctx, `SELECT podcasts_enabled FROM organizations WHERE id = $1`, orgID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrNotFound
+		}
+		return false, fmt.Errorf("models: get org podcasts flag: %w", err)
+	}
+	return enabled, nil
+}
+
+// SetPodcastsEnabled updates an org's Task 9 Podcasts feature flag.
+func (r *OrgRepo) SetPodcastsEnabled(ctx context.Context, q Querier, orgID string, enabled bool) error {
+	tag, err := q.Exec(ctx, `UPDATE organizations SET podcasts_enabled = $2, updated_at = now() WHERE id = $1`, orgID, enabled)
+	if err != nil {
+		return fmt.Errorf("models: set org podcasts flag: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
 // for an org. Only ever called once per org (the first video upload finds
 // GetBunnyLibraryID returning "" and calls this immediately after

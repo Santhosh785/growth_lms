@@ -152,6 +152,11 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		AIGenerations: models.NewAIGenerationRepo(),
 		AIUsage:       models.NewAIUsageRepo(),
 		AITutor:       models.NewAITutorRepo(),
+
+		PodcastShows:     models.NewPodcastShowRepo(),
+		PodcastEpisodes:  models.NewPodcastEpisodeRepo(),
+		PodcastPlaylists: models.NewPodcastPlaylistRepo(),
+		PodcastProgress:  models.NewPodcastProgressRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -180,6 +185,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerCommunityRoutes(engine, deps, db)
 	registerGrowthRoutes(engine, deps, db)
 	registerAIRoutes(engine, deps, db)
+	registerPodcastRoutes(engine, deps, db)
 	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
@@ -348,6 +354,56 @@ func registerAIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool
 	org.GET("/ai/usage", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.AIUsageDashboard(d))
 }
 
+// registerPodcastRoutes mounts Task 9's Podcasts & RSS authoring, settings,
+// and learner-progress routes — all authed and org-scoped, reusing the exact
+// ResolveOrg/RequireRole pattern registerOrgRoutes establishes. Authoring
+// (show/episode/playlist CRUD, publish) is owner/teacher-gated; episode
+// detail + listen-progress reporting are open to any authenticated org
+// member (RLS scopes progress to the caller); settings are owner-only. Every
+// handler independently enforces the two-flag feature gate (platform
+// LMS_PODCASTS_ENABLED AND the org's podcasts_enabled) via handlers.podcastGate
+// — the route gating here is authz only, not the feature gate. The PUBLIC RSS
+// feed is registered in registerPublicSiteRoutes.
+func registerPodcastRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	org.GET("/podcasts/settings", middleware.RequireRole(auth.RoleOwner), handlers.GetPodcastSettings(d))
+	org.PATCH("/podcasts/settings", middleware.RequireRole(auth.RoleOwner), handlers.UpdatePodcastSettings(d))
+
+	// Shows + their episodes (owner/teacher authoring).
+	org.POST("/podcasts/shows", authoring, handlers.CreatePodcastShow(d))
+	org.GET("/podcasts/shows", authoring, handlers.ListPodcastShows(d))
+	org.GET("/podcasts/shows/:showId", authoring, handlers.GetPodcastShow(d))
+	org.PATCH("/podcasts/shows/:showId", authoring, handlers.UpdatePodcastShow(d))
+	org.DELETE("/podcasts/shows/:showId", authoring, handlers.DeletePodcastShow(d))
+	org.POST("/podcasts/shows/:showId/episodes", authoring, handlers.CreatePodcastEpisode(d))
+
+	org.PATCH("/podcasts/episodes/:episodeId", authoring, handlers.UpdatePodcastEpisode(d))
+	org.POST("/podcasts/episodes/:episodeId/publish", authoring, handlers.SetPodcastEpisodePublished(d))
+	org.DELETE("/podcasts/episodes/:episodeId", authoring, handlers.DeletePodcastEpisode(d))
+
+	// Episode detail + listen progress — any org member (RLS scopes progress
+	// to the caller). Not authoring-gated: a learner needs to read the
+	// episode/transcript and record their own listen position.
+	org.GET("/podcasts/episodes/:episodeId", handlers.GetPodcastEpisodeDetail(d))
+	org.POST("/podcasts/episodes/:episodeId/progress", handlers.ReportPodcastProgress(d))
+
+	// Playlists (owner/teacher authoring).
+	org.POST("/podcasts/playlists", authoring, handlers.CreatePodcastPlaylist(d))
+	org.GET("/podcasts/playlists", authoring, handlers.ListPodcastPlaylists(d))
+	org.GET("/podcasts/playlists/:playlistId", authoring, handlers.GetPodcastPlaylist(d))
+	org.DELETE("/podcasts/playlists/:playlistId", authoring, handlers.DeletePodcastPlaylist(d))
+	org.POST("/podcasts/playlists/:playlistId/items", authoring, handlers.AddPodcastPlaylistItem(d))
+	org.DELETE("/podcasts/playlists/:playlistId/items/:episodeId", authoring, handlers.RemovePodcastPlaylistItem(d))
+}
+
 // registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org
 // site surfaces: the landing-page builder's rendered output, SEO
 // (sitemap/robots), and the embeddable course catalog. No Authenticate/
@@ -361,6 +417,11 @@ func registerPublicSiteRoutes(engine *gin.Engine, d *handlers.AuthDeps) {
 	site.GET("/pages/:slug", handlers.PublicOrgPage(d))
 	site.GET("/sitemap.xml", handlers.Sitemap(d))
 	site.GET("/robots.txt", handlers.Robots(d))
+
+	// Task 9 Podcasts: the public RSS 2.0 feed a podcast app subscribes to.
+	// Same anonymous, SECURITY-DEFINER-resolved pattern as the routes above
+	// (see handlers.PodcastRSS).
+	site.GET("/podcasts/:show_slug/rss.xml", handlers.PodcastRSS(d))
 
 	engine.GET("/embed/o/:org_slug/catalog", handlers.EmbedCatalog(d))
 }

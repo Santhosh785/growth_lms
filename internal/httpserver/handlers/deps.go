@@ -92,4 +92,10 @@ type AuthDeps struct {
 	AIGenerations *models.AIGenerationRepo
 	AIUsage       *models.AIUsageRepo
 	AITutor       *models.AITutorRepo
+
+	// Task 9: podcasts & RSS.
+	PodcastShows     *models.PodcastShowRepo
+	PodcastEpisodes  *models.PodcastEpisodeRepo
+	PodcastPlaylists *models.PodcastPlaylistRepo
+	PodcastProgress  *models.PodcastProgressRepo
 }

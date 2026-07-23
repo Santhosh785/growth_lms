@@ -44,6 +44,7 @@ type Config struct {
 	Resend   ResendConfig
 	Razorpay RazorpayConfig
 	AI       AIConfig
+	Podcasts PodcastsConfig
 
 	CORS        CORSConfig
 	TrustProxy  bool
@@ -110,6 +111,15 @@ type AIConfig struct {
 	APIKey            string
 	Model             string
 	MonthlyTokenLimit int64
+}
+
+// PodcastsConfig configures Task 9's Podcasts & RSS module. Entirely
+// optional (not in the `required` list): with Enabled false — the default —
+// the module is dark platform-wide regardless of any org's own
+// podcasts_enabled toggle, giving an operator a single kill-switch. Mirrors
+// AIConfig.Enabled's two-flag gate (platform AND org).
+type PodcastsConfig struct {
+	Enabled bool
 }
 
 type CORSConfig struct {
@@ -229,6 +239,9 @@ func Load() (*Config, error) {
 			APIKey:            getEnv("LMS_AI_API_KEY", os.Getenv("ANTHROPIC_API_KEY")),
 			Model:             getEnv("LMS_AI_MODEL", "claude-opus-4-8"),
 			MonthlyTokenLimit: getEnvInt64("LMS_AI_MONTHLY_TOKEN_LIMIT", 2_000_000),
+		},
+		Podcasts: PodcastsConfig{
+			Enabled: getEnvBool("LMS_PODCASTS_ENABLED", false),
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: origins,
