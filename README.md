@@ -31,3 +31,4 @@ See [SECURITY.md](SECURITY.md) for how to report a security issue.
 ## License
 
 Proprietary / All Rights Reserved. This is closed-source, privately operated SaaS — no open-source license applies to the product itself. See [LICENSES.md](LICENSES.md) for the license inventory of third-party dependencies used within the codebase.
+# growth_lms
