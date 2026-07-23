@@ -63,6 +63,10 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 
 	static.Register(engine)
 
+	// Task 12: public legal pages.
+	engine.GET("/privacy", handlers.PrivacyPage)
+	engine.GET("/terms", handlers.TermsPage)
+
 	engine.GET("/healthz", handlers.Healthz)
 	engine.GET("/readyz", handlers.Readyz(db, redisClient))
 	// Task 10: Prometheus metrics scrape endpoint (request counts/latency,

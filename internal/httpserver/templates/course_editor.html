@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2937">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg">
   <title>Edit: {{.Course.Title}}</title>
   <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
@@ -13,6 +17,7 @@
     .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
     textarea { width: 100%; box-sizing: border-box; }
   </style>
+  <script src="/static/app.js"></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
   {{template "nav-placeholder" .}}

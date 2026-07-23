@@ -1,0 +1,19 @@
+{
+  "name": "Growth LMS",
+  "short_name": "Growth LMS",
+  "description": "Online learning platform for courses, lessons, and certificates.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2937",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2937">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg">
   <title>{{.Course.Title}}</title>
   <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
@@ -15,6 +19,7 @@
     .done { color: #2b7; font-weight: bold; margin-left: 0.5rem; }
     button { cursor: pointer; }
   </style>
+  <script src="/static/app.js"></script>
 </head>
 <body>
   {{template "nav-placeholder" .}}

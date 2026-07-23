@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Growth LMS">
+  <rect width="512" height="512" rx="96" fill="#1f2937"/>
+  <path d="M256 112 96 192l160 80 128-64v96h32v-112L256 112zM160 268v72c0 27 43 52 96 52s96-25 96-52v-72l-96 48-96-48z" fill="#ffffff"/>
+</svg>

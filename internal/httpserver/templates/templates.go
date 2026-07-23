@@ -16,7 +16,7 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html nav.html discussions.html thread.html notifications.html board.html moderation.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html nav.html discussions.html thread.html notifications.html board.html moderation.html legal_privacy.html legal_terms.html
 var fs embed.FS
 
 // Nav is the shared nav bar every authenticated/semi-public page embeds
@@ -92,6 +92,11 @@ var Board = parseWithNav("board.html")
 
 // Moderation is the Task 7 moderator report-queue page.
 var Moderation = parseWithNav("moderation.html")
+
+// Privacy and Terms are the public, standalone legal pages (Task 12). Static
+// content, no nav or auth — served at /privacy and /terms.
+var Privacy = template.Must(template.ParseFS(fs, "legal_privacy.html"))
+var Terms = template.Must(template.ParseFS(fs, "legal_terms.html"))
 
 // OrderStatus is the "processing your payment" page a learner's browser
 // lands on after Razorpay's checkout.js success callback (Task 10

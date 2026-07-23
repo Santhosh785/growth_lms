@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2937">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg">
   <title>Checkout — {{.Course.Title}}</title>
   <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
@@ -12,6 +16,7 @@
     .banner { background: #fee; border: 1px solid #c33; border-radius: 6px; padding: 0.75rem; margin: 1rem 0; color: #922; }
     button { cursor: pointer; padding: 0.5rem 1rem; }
   </style>
+  <script src="/static/app.js"></script>
 </head>
 <body>
   {{template "nav-placeholder" .}}

@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2937">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg">
   <title>Processing your order</title>
   <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
@@ -9,6 +13,7 @@
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; text-align: center; }
     #order-status { border: 1px solid #ccc; border-radius: 6px; padding: 2rem; }
   </style>
+  <script src="/static/app.js"></script>
 </head>
 <body>
   {{template "nav-placeholder" .}}
