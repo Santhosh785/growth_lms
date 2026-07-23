@@ -46,6 +46,7 @@ type Config struct {
 	AI       AIConfig
 	Podcasts PodcastsConfig
 	CodeExec CodeExecConfig
+	Scorm    ScormConfig
 
 	CORS        CORSConfig
 	TrustProxy  bool
@@ -140,6 +141,15 @@ type CodeExecConfig struct {
 	DefaultMemoryBytes   int64
 	DefaultWallMillis    int
 	DefaultMaxOutputByte int
+}
+
+// ScormConfig configures Task 9's SCORM 1.2/2004 module. Entirely optional
+// (not in the `required` list): with Enabled false — the default — the module
+// is dark platform-wide regardless of any org's own scorm_enabled toggle,
+// giving an operator a single kill-switch. Mirrors PodcastsConfig's flag-only
+// two-flag gate (platform Enabled AND the org's scorm_enabled toggle).
+type ScormConfig struct {
+	Enabled bool
 }
 
 type CORSConfig struct {
@@ -262,6 +272,9 @@ func Load() (*Config, error) {
 		},
 		Podcasts: PodcastsConfig{
 			Enabled: getEnvBool("LMS_PODCASTS_ENABLED", false),
+		},
+		Scorm: ScormConfig{
+			Enabled: getEnvBool("LMS_SCORM_ENABLED", false),
 		},
 		CodeExec: CodeExecConfig{
 			Enabled:              getEnvBool("LMS_CODE_EXEC_ENABLED", false),

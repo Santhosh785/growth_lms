@@ -12,6 +12,7 @@ import (
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
+	"growth-lms/internal/scorm"
 )
 
 // AuthDeps bundles everything the auth/org/membership/invitation/api-token
@@ -105,4 +106,9 @@ type AuthDeps struct {
 	CodeExercises   *models.CodeExerciseRepo
 	CodeSubmissions *models.CodeSubmissionRepo
 	CodeExecUsage   *models.CodeExecUsageRepo
+
+	// Task 9: SCORM 1.2/2004.
+	Scorm         *scorm.Service
+	ScormPackages *models.ScormPackageRepo
+	ScormAttempts *models.ScormAttemptRepo
 }

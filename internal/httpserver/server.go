@@ -24,6 +24,7 @@ import (
 	"growth-lms/internal/payments"
 	"growth-lms/internal/ratelimit"
 	"growth-lms/internal/realtime"
+	"growth-lms/internal/scorm"
 	"growth-lms/internal/worker"
 )
 
@@ -168,6 +169,10 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		CodeExercises:   models.NewCodeExerciseRepo(),
 		CodeSubmissions: models.NewCodeSubmissionRepo(),
 		CodeExecUsage:   models.NewCodeExecUsageRepo(),
+
+		Scorm:         scorm.NewService(),
+		ScormPackages: models.NewScormPackageRepo(),
+		ScormAttempts: models.NewScormAttemptRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -198,6 +203,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerAIRoutes(engine, deps, db)
 	registerPodcastRoutes(engine, deps, db)
 	registerCodeExecRoutes(engine, deps, db)
+	registerScormRoutes(engine, deps, db)
 	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
@@ -461,6 +467,50 @@ func registerCodeExecRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpoo
 	org.POST("/code/run", handlers.RunCode(d))
 	org.POST("/code/exercises/:exerciseId/submit", handlers.SubmitCodeExercise(d))
 	org.GET("/code/submissions", handlers.ListMyCodeSubmissions(d))
+}
+
+// registerScormRoutes mounts Task 9's SCORM 1.2/2004 routes — all authed and
+// org-scoped, reusing the same ResolveOrg/RequireRole pattern. Package
+// authoring (import/validate, edit, publish, delete) and per-package reporting
+// are owner/teacher gated; browsing the published catalog, launching, and the
+// SCO runtime (commit/finish) plus one's own attempt history are open to any
+// authenticated org member (RLS scopes attempts to the caller); settings are
+// owner-only. Every handler independently enforces the two-flag feature gate
+// (platform LMS_SCORM_ENABLED AND the org's scorm_enabled) via scormGate — the
+// route gating here is authz only. There is no public/anonymous surface: a SCO
+// always runs inside an authenticated learner's session.
+func registerScormRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	// Settings (owner).
+	org.GET("/scorm/settings", middleware.RequireRole(auth.RoleOwner), handlers.GetScormSettings(d))
+	org.PATCH("/scorm/settings", middleware.RequireRole(auth.RoleOwner), handlers.UpdateScormSettings(d))
+
+	// Package authoring + reporting (owner/teacher). The manifest is validated
+	// server-side on create; a bad upload is a 400 with the specific reason.
+	org.POST("/scorm/packages", authoring, handlers.CreateScormPackage(d))
+	org.GET("/scorm/packages", authoring, handlers.ListScormPackages(d))
+	org.GET("/scorm/packages/:packageId", authoring, handlers.GetScormPackage(d))
+	org.PATCH("/scorm/packages/:packageId", authoring, handlers.UpdateScormPackage(d))
+	org.POST("/scorm/packages/:packageId/publish", authoring, handlers.SetScormPackagePublished(d))
+	org.DELETE("/scorm/packages/:packageId", authoring, handlers.DeleteScormPackage(d))
+	org.GET("/scorm/packages/:packageId/report", authoring, handlers.ScormPackageReport(d))
+
+	// Learner-facing catalog + runtime (any member). launch/commit/finish are
+	// distinct path segments so they don't collide with the authoring GET on
+	// /scorm/packages/:packageId.
+	org.GET("/scorm/catalog", handlers.ListScormCatalog(d))
+	org.POST("/scorm/packages/:packageId/launch", handlers.LaunchScormPackage(d))
+	org.POST("/scorm/attempts/:attemptId/commit", handlers.CommitScormRuntime(d))
+	org.POST("/scorm/attempts/:attemptId/finish", handlers.FinishScormAttempt(d))
+	org.GET("/scorm/attempts", handlers.ListMyScormAttempts(d))
 }
 
 // registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org

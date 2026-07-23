@@ -316,6 +316,31 @@ func (r *OrgRepo) SetPodcastsEnabled(ctx context.Context, q Querier, orgID strin
 	return nil
 }
 
+// GetScormEnabled reads an org's Task 9 SCORM feature flag.
+func (r *OrgRepo) GetScormEnabled(ctx context.Context, q Querier, orgID string) (bool, error) {
+	var enabled bool
+	err := q.QueryRow(ctx, `SELECT scorm_enabled FROM organizations WHERE id = $1`, orgID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrNotFound
+		}
+		return false, fmt.Errorf("models: get org scorm flag: %w", err)
+	}
+	return enabled, nil
+}
+
+// SetScormEnabled updates an org's Task 9 SCORM feature flag.
+func (r *OrgRepo) SetScormEnabled(ctx context.Context, q Querier, orgID string, enabled bool) error {
+	tag, err := q.Exec(ctx, `UPDATE organizations SET scorm_enabled = $2, updated_at = now() WHERE id = $1`, orgID, enabled)
+	if err != nil {
+		return fmt.Errorf("models: set org scorm flag: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CodeExecSettings is an org's Task 9 sandboxed-code-execution configuration:
 // whether the feature is switched on for this org, and an optional per-org
 // daily execution cap that overrides the platform default (nil = use the
