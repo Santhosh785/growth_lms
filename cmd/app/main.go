@@ -1,6 +1,8 @@
-// Command app is the single Growth LMS binary. It supports two
-// subcommands sharing one config/dependency wiring: `serve` runs the
-// HTTP API/HTML server, `worker` runs the Redis-backed job consumer.
+// Command app is the single Growth LMS binary. The long-running services —
+// `serve` (HTTP API/HTML server) and `worker` (Redis-backed job consumer) —
+// share config/dependency wiring here. The operational commands (setup,
+// migrate, backup, restore, health, status, start, stop, logs) are
+// dispatched to internal/cli so this entry point stays small.
 package main
 
 import (
@@ -16,6 +18,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
+	"growth-lms/internal/cli"
 	"growth-lms/internal/config"
 	"growth-lms/internal/db"
 	"growth-lms/internal/httpserver"
@@ -23,9 +26,30 @@ import (
 	"growth-lms/internal/worker"
 )
 
+// serviceCommands run a long-lived process and own the config+logger wiring
+// below. Everything else is an operational command handled by internal/cli.
+var serviceCommands = []string{"serve", "worker"}
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: app <serve|worker>")
+		cli.Usage(os.Stderr, serviceCommands)
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	// Operational commands (migrate/backup/health/...) load their own config
+	// and are not tied to the service logger, so dispatch them first.
+	if command != "serve" && command != "worker" {
+		if cmd, ok := cli.Registry()[command]; ok {
+			if err := cmd.Run(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", command, err)
+				os.Exit(1)
+			}
+			return
+		}
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", command)
+		cli.Usage(os.Stderr, serviceCommands)
 		os.Exit(1)
 	}
 
@@ -46,12 +70,12 @@ func main() {
 	// calls actually route through the configured handler/format instead
 	// of slog's bare fallback.
 	slog.SetDefault(logger)
-	logger.Info("starting", "command", os.Args[1], "config", cfg.Redacted())
+	logger.Info("starting", "command", command, "config", cfg.Redacted())
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	switch os.Args[1] {
+	switch command {
 	case "serve":
 		if err := runServe(ctx, cfg, logger); err != nil {
 			logger.Error("serve exited with error", "error", err)
@@ -62,9 +86,6 @@ func main() {
 			logger.Error("worker exited with error", "error", err)
 			os.Exit(1)
 		}
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q; usage: app <serve|worker>\n", os.Args[1])
-		os.Exit(1)
 	}
 }
 
