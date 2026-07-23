@@ -59,6 +59,18 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 	profiles := models.NewProfileRepo()
 	emailClient := notify.NewResendClient(cfg.Resend)
 
+	// Task 7 community notification handlers share one dependency bundle.
+	community := &communityDeps{
+		pool:          pool,
+		profiles:      profiles,
+		memberships:   models.NewMembershipRepo(),
+		notifications: models.NewNotificationRepo(),
+		prefs:         models.NewNotificationPreferenceRepo(),
+		unsub:         models.NewUnsubscribeTokenRepo(),
+		email:         emailClient,
+		baseURL:       cfg.BaseURL,
+	}
+
 	// Task 8's payment.captured handler enqueues a receipt-email task
 	// from within a task handler, which needs its own asynq.Client (the
 	// server above only consumes) — same producer/consumer split
@@ -74,6 +86,10 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 	mux.HandleFunc(TypeNotifyCourseReminder, handleNotifyCourseReminder(pool, profiles, emailClient))
 	mux.HandleFunc(TypeRazorpayWebhook, handleRazorpayWebhook(pool, asyncClient, logger))
 	mux.HandleFunc(TypeSendReceiptEmail, handleSendReceiptEmail(pool, profiles, emailClient))
+	mux.HandleFunc(TypeNotifyMention, handleNotifyMention(community))
+	mux.HandleFunc(TypeNotifyReply, handleNotifyReply(community))
+	mux.HandleFunc(TypeNotifyReportFiled, handleNotifyReportFiled(community))
+	mux.HandleFunc(TypeNotifyBroadcast, handleNotifyBroadcast(community))
 
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	defer cancelSweep()
