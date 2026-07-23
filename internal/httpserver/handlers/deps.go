@@ -5,6 +5,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
 	"growth-lms/internal/config"
 	"growth-lms/internal/media"
@@ -85,4 +86,10 @@ type AuthDeps struct {
 	AnalyticsRollups *models.AnalyticsRollupRepo
 	OrgPages         *models.OrgPageRepo
 	Search           *models.SearchRepo
+
+	// Task 9: AI authoring & tutors.
+	AI            *ai.Service
+	AIGenerations *models.AIGenerationRepo
+	AIUsage       *models.AIUsageRepo
+	AITutor       *models.AITutorRepo
 }

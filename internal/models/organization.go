@@ -254,6 +254,43 @@ func (r *OrgRepo) GetByVerifiedCustomDomain(ctx context.Context, q Querier, doma
 	return &o, nil
 }
 
+// AISettings is an org's Task 9 AI configuration: whether the feature is
+// switched on for this org, and an optional per-org monthly token cap that
+// overrides the platform default (nil = use the platform default).
+type AISettings struct {
+	Enabled           bool
+	MonthlyTokenLimit *int64
+}
+
+// GetAISettings reads an org's AI feature flag and per-org cap override.
+func (r *OrgRepo) GetAISettings(ctx context.Context, q Querier, orgID string) (AISettings, error) {
+	var s AISettings
+	err := q.QueryRow(ctx, `SELECT ai_enabled, ai_monthly_token_limit FROM organizations WHERE id = $1`, orgID).
+		Scan(&s.Enabled, &s.MonthlyTokenLimit)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s, ErrNotFound
+		}
+		return s, fmt.Errorf("models: get org ai settings: %w", err)
+	}
+	return s, nil
+}
+
+// SetAISettings updates an org's AI feature flag and optional cap override.
+// A nil monthlyTokenLimit stores NULL (fall back to the platform default).
+func (r *OrgRepo) SetAISettings(ctx context.Context, q Querier, orgID string, enabled bool, monthlyTokenLimit *int64) error {
+	tag, err := q.Exec(ctx, `
+		UPDATE organizations SET ai_enabled = $2, ai_monthly_token_limit = $3, updated_at = now()
+		WHERE id = $1`, orgID, enabled, monthlyTokenLimit)
+	if err != nil {
+		return fmt.Errorf("models: set org ai settings: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
 // for an org. Only ever called once per org (the first video upload finds
 // GetBunnyLibraryID returning "" and calls this immediately after

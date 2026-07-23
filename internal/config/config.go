@@ -43,6 +43,7 @@ type Config struct {
 	BunnyNet BunnyNetConfig
 	Resend   ResendConfig
 	Razorpay RazorpayConfig
+	AI       AIConfig
 
 	CORS        CORSConfig
 	TrustProxy  bool
@@ -96,6 +97,20 @@ type RazorpayConfig struct {
 // follows the publishSweepInterval precedent in internal/worker/worker.go,
 // which hardcodes its sweep interval as an unexported const rather than an
 // env-configurable value.
+
+// AIConfig configures Task 9's AI authoring & tutor module. It is entirely
+// optional (none of these are in the `required` list): with Enabled false —
+// the default — the platform ships the stub provider, so the feature is
+// dark until an operator turns it on. Provider "anthropic" needs APIKey.
+// MonthlyTokenLimit is the platform-wide default per-org cap; an org may
+// override it downward via organizations.ai_monthly_token_limit.
+type AIConfig struct {
+	Enabled           bool
+	Provider          string
+	APIKey            string
+	Model             string
+	MonthlyTokenLimit int64
+}
 
 type CORSConfig struct {
 	AllowedOrigins []string
@@ -206,6 +221,15 @@ func Load() (*Config, error) {
 			KeySecret:     values["LMS_RAZORPAY_KEY_SECRET"],
 			WebhookSecret: values["LMS_RAZORPAY_WEBHOOK_SECRET"],
 		},
+		AI: AIConfig{
+			Enabled:  getEnvBool("LMS_AI_ENABLED", false),
+			Provider: getEnv("LMS_AI_PROVIDER", "stub"),
+			// ANTHROPIC_API_KEY is the name the Go SDK itself reads, so we
+			// accept it directly and fall back to the LMS-namespaced form.
+			APIKey:            getEnv("LMS_AI_API_KEY", os.Getenv("ANTHROPIC_API_KEY")),
+			Model:             getEnv("LMS_AI_MODEL", "claude-opus-4-8"),
+			MonthlyTokenLimit: getEnvInt64("LMS_AI_MONTHLY_TOKEN_LIMIT", 2_000_000),
+		},
 		CORS: CORSConfig{
 			AllowedOrigins: origins,
 		},
@@ -268,6 +292,18 @@ func getEnvBool(name string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+func getEnvInt64(name string, fallback int64) int64 {
+	v, ok := os.LookupEnv(name)
+	if !ok || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func splitAndTrim(v string) []string {

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
 	"growth-lms/internal/config"
 	"growth-lms/internal/httpserver/handlers"
@@ -146,6 +147,11 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		AnalyticsRollups: models.NewAnalyticsRollupRepo(),
 		OrgPages:         models.NewOrgPageRepo(),
 		Search:           models.NewSearchRepo(),
+
+		AI:            ai.NewServiceFromSettings(cfg.AI.Enabled, cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model),
+		AIGenerations: models.NewAIGenerationRepo(),
+		AIUsage:       models.NewAIUsageRepo(),
+		AITutor:       models.NewAITutorRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -173,6 +179,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerAdminUIRoutes(engine, deps, db)
 	registerCommunityRoutes(engine, deps, db)
 	registerGrowthRoutes(engine, deps, db)
+	registerAIRoutes(engine, deps, db)
 	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
@@ -304,6 +311,41 @@ func registerGrowthRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.
 	course := authed.Group("/courses/:courseId")
 	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
 	course.GET("/offers/:offerId/embed-link", handlers.CourseCheckoutLink(d))
+}
+
+// registerAIRoutes mounts Task 9's AI authoring & tutor routes. Authoring
+// (outline/lesson/quiz generation) is owner/teacher-gated and course-scoped,
+// reusing the ResolveCourseOrg + RequireRole pattern registerCourseRoutes
+// establishes. The tutor is learner-facing and entitlement-gated (any
+// enrolled learner, plus owner/teacher, per RequireEntitlement). AI settings
+// (owner) and the usage dashboard (owner/teacher) are org-scoped. Every
+// generation handler independently enforces the AI feature flag and the
+// monthly usage cap (see handlers.generateGated) — the route gating here is
+// authz only, not the feature/limit gate.
+func registerAIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	course := authed.Group("/courses/:courseId")
+	course.Use(middleware.ResolveCourseOrg(d.Courses, d.Memberships, d.Profiles))
+
+	course.POST("/ai/outline", authoring, handlers.GenerateOutline(d))
+	course.POST("/ai/lesson", authoring, handlers.GenerateLesson(d))
+	course.POST("/ai/quiz", authoring, handlers.GenerateQuiz(d))
+
+	entitled := middleware.RequireEntitlement(d.LearnerCourseAccess)
+	course.POST("/ai/tutor", entitled, handlers.TutorAsk(d))
+	course.GET("/ai/tutor/sessions", entitled, handlers.ListTutorSessions(d))
+	course.GET("/ai/tutor/sessions/:sessionId", entitled, handlers.GetTutorSession(d))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	org.GET("/ai/settings", middleware.RequireRole(auth.RoleOwner), handlers.GetAISettings(d))
+	org.PATCH("/ai/settings", middleware.RequireRole(auth.RoleOwner), handlers.UpdateAISettings(d))
+	org.GET("/ai/usage", middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher), handlers.AIUsageDashboard(d))
 }
 
 // registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org
