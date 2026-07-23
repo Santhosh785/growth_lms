@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Edit: {{.Course.Title}}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
@@ -16,6 +16,7 @@
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   <h1>{{.Course.Title}} <small>({{.Course.Status}})</small></h1>
 
   <div class="toolbar">
@@ -40,15 +41,15 @@
 
   <h2>Chapters</h2>
   <form hx-post="/courses/{{.Course.ID}}/edit/chapters" hx-target="body">
-    <input type="text" name="title" placeholder="New chapter title" required>
+    <input type="text" name="title" placeholder="New chapter title" aria-label="New chapter title" required>
     <button type="submit">Add chapter</button>
   </form>
 
   {{range .Chapters}}
   <div class="chapter">
     <h3>{{.Title}}
-      {{if not .IsFirst}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="up"><button type="submit">&uarr;</button></form>{{end}}
-      {{if not .IsLast}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="down"><button type="submit">&darr;</button></form>{{end}}
+      {{if not .IsFirst}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="up"><button type="submit" aria-label="Move chapter up">&uarr;</button></form>{{end}}
+      {{if not .IsLast}}<form style="display:inline" hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/move" hx-target="body"><input type="hidden" name="direction" value="down"><button type="submit" aria-label="Move chapter down">&darr;</button></form>{{end}}
     </h3>
 
     {{$chapterID := .ID}}
@@ -60,7 +61,7 @@
         <em>{{.Type}}</em>
         {{if eq .Type "text"}}
         <form hx-post="/courses/{{$.Course.ID}}/edit/blocks/{{.ID}}/autosave" hx-trigger="change delay:1s" hx-swap="none">
-          <textarea name="html" rows="3">{{.HTML}}</textarea>
+          <textarea name="html" rows="3" aria-label="Lesson text content">{{.HTML}}</textarea>
         </form>
         {{else}}
         <span>({{.Type}} block — upload UI not shown in this minimal editor)</span>
@@ -68,7 +69,7 @@
       </div>
       {{end}}
       <form hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{$chapterID}}/lessons/{{.ID}}/blocks" hx-target="body">
-        <select name="type">
+        <select name="type" aria-label="Block type">
           <option value="text">Text</option>
           <option value="image">Image</option>
           <option value="video">Video</option>
@@ -81,7 +82,7 @@
     {{end}}
 
     <form hx-post="/courses/{{$.Course.ID}}/edit/chapters/{{.ID}}/lessons" hx-target="body">
-      <input type="text" name="title" placeholder="New lesson title" required>
+      <input type="text" name="title" placeholder="New lesson title" aria-label="New lesson title" required>
       <button type="submit">Add lesson</button>
     </form>
   </div>
@@ -98,5 +99,6 @@
     </li>
     {{end}}
   </ul>
+  </main>
 </body>
 </html>

@@ -14,10 +14,12 @@ import (
 
 	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
+	"growth-lms/internal/cache"
 	"growth-lms/internal/codeexec"
 	"growth-lms/internal/config"
 	"growth-lms/internal/httpserver/handlers"
 	"growth-lms/internal/httpserver/middleware"
+	"growth-lms/internal/httpserver/static"
 	"growth-lms/internal/httpserver/webconsole"
 	"growth-lms/internal/media"
 	"growth-lms/internal/metrics"
@@ -57,6 +59,9 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 
 	engine.Use(middleware.RequestLogger(logger))
 	engine.Use(corsMiddleware(cfg))
+	engine.Use(middleware.SecurityHeaders(cfg))
+
+	static.Register(engine)
 
 	engine.GET("/healthz", handlers.Healthz)
 	engine.GET("/readyz", handlers.Readyz(db, redisClient))
@@ -209,6 +214,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Quota:        quota.New(planRepo, quotaRepo, aiUsageRepo),
 		Inspector:    inspector,
 		AdminOps:     models.NewAdminOpsRepo(),
+		Catalog:      cache.New(redisClient, "cache:catalog:"),
 	}
 
 	// Task 10: wire the process-wide database-alert sink so WithRequestTx can

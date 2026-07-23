@@ -2,7 +2,7 @@
 # (serve|worker) selects the mode. See Makefile / docker-compose.yml.
 
 # --- Build stage -----------------------------------------------------------
-FROM golang:1.25-alpine AS build
+FROM golang:1.25.12-alpine AS build
 WORKDIR /src
 
 RUN apk add --no-cache ca-certificates
@@ -16,7 +16,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/app
 
 # --- Development stage (used by docker-compose.yml, has hot-reload) -------
-FROM golang:1.25-alpine AS development
+FROM golang:1.25.12-alpine AS development
 WORKDIR /app
 RUN go install github.com/air-verse/air@latest
 COPY go.mod go.sum ./

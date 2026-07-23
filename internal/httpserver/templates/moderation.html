@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Moderation — Growth LMS</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="/static/htmx.min.js"></script>
 {{template "nav-styles" .}}
 <style>
   body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
@@ -15,8 +15,10 @@
 </head>
 <body>
 {{template "nav-placeholder" .}}
+<main id="main-content">
 <h1>Moderation queue</h1>
 <div id="reports">Loading…</div>
+</main>
 
 <script>
 const slug = {{.Slug}};

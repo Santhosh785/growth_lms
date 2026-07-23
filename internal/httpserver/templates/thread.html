@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Discussion — Growth LMS</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="/static/htmx.min.js"></script>
 {{template "nav-styles" .}}
 <style>
   body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
@@ -21,19 +21,21 @@
 </head>
 <body>
 {{template "nav-placeholder" .}}
+<main id="main-content">
 <p><a href="javascript:history.back()">← Back</a></p>
 <h1 id="thread-title">{{.Title}}</h1>
 <div id="posts">Loading…</div>
 
 <h3>Reply</h3>
 <div style="position:relative">
-  <textarea id="body" placeholder="Write a reply… use @ to mention"></textarea>
+  <textarea id="body" placeholder="Write a reply… use @ to mention" aria-label="Write a reply"></textarea>
   <div id="picker"></div>
 </div>
 <div style="margin-top:0.5rem">
   <button onclick="submitPost()">Post reply</button>
   <span id="replying"></span>
 </div>
+</main>
 
 <script>
 const threadId = {{.ThreadID}};
@@ -59,8 +61,8 @@ function renderPost(p, isReply) {
     <div class="meta">${p.author_id === meId ? 'You' : 'Member'} · ${new Date(p.created_at).toLocaleString()}${p.edited_at?' (edited)':''}</div>
     <div>${escapeHtml(stripTokens(p.body))}</div>
     <div class="actions" style="margin-top:0.4rem">
-      <button onclick="react('${p.id}','👍')">👍</button>
-      <button onclick="react('${p.id}','🎉')">🎉</button>
+      <button onclick="react('${p.id}','👍')" aria-label="React thumbs up">👍</button>
+      <button onclick="react('${p.id}','🎉')" aria-label="React celebrate">🎉</button>
       ${!isReply?`<button onclick="setReply('${p.id}')">Reply</button>`:''}
       <button onclick="report('${p.id}')">Report</button>
       ${canMod?`<button onclick="del('${p.id}')">Delete</button>`:''}

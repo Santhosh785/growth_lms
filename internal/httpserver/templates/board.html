@@ -15,10 +15,12 @@
 </head>
 <body>
 {{template "nav-placeholder" .}}
+<main id="main-content">
 <h1>{{.Title}}</h1>
 <div id="presence"><span class="dot"></span><span id="present">connecting…</span></div>
 <p style="color:#666;font-size:0.9rem">Click anywhere to add a sticky note. Changes sync live with everyone viewing this board.</p>
 <div id="canvas"></div>
+</main>
 
 <script>
 const boardId = {{.BoardID}};

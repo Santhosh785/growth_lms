@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notifications — Growth LMS</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="/static/htmx.min.js"></script>
 {{template "nav-styles" .}}
 <style>
   body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; }
@@ -17,9 +17,11 @@
 </head>
 <body>
 {{template "nav-placeholder" .}}
+<main id="main-content">
 <h1>Notifications</h1>
 <button onclick="markAll()">Mark all read</button>
 <div id="list" style="margin-top:1rem">Loading…</div>
+</main>
 
 <script>
 async function load() {

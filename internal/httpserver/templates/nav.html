@@ -8,6 +8,9 @@
   .lms-nav .email { opacity: 0.6; font-size: 0.85rem; }
   .lms-nav .bell { position: relative; }
   .nav-badge { background: #e02424; color: #fff; border-radius: 999px; font-size: 0.7rem; padding: 0 0.35rem; margin-left: 0.15rem; }
+  .skip-link { position: absolute; left: -9999px; top: 0; background: #fff; color: #222; padding: 0.5rem 1rem; z-index: 1000; }
+  .skip-link:focus { left: 0.5rem; top: 0.5rem; }
+  :focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
 </style>
 {{end}}
 
@@ -18,7 +21,8 @@
 {{end}}
 
 {{define "nav"}}
-<nav class="lms-nav" id="lms-nav">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<nav class="lms-nav" id="lms-nav" aria-label="Main">
   <a class="brand" href="/">Growth LMS</a>
   {{if .LoggedIn}}
     <a href="/dashboard">Dashboard</a>
@@ -31,7 +35,7 @@
       <a href="/admin/organizations">Platform Admin</a>
     {{end}}
     <span class="spacer"></span>
-    <a class="bell" href="/notifications" title="Notifications">🔔<span id="nav-unread" hx-get="/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="innerHTML"></span></a>
+    <a class="bell" href="/notifications" title="Notifications" aria-label="Notifications">🔔<span id="nav-unread" hx-get="/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="innerHTML"></span></a>
     <span class="email">{{.Email}}</span>
     <a href="/nav/logout">Log out</a>
   {{else}}

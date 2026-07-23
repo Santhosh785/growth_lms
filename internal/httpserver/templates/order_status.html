@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Processing your order</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; text-align: center; }
@@ -12,6 +12,7 @@
 </head>
 <body>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   <h1>Processing your payment</h1>
   <!--
     This div is the htmx polling root. It hits status-fragment (a small
@@ -28,5 +29,6 @@
        hx-swap="outerHTML">
     Processing your payment&hellip;
   </div>
+  </main>
 </body>
 </html>

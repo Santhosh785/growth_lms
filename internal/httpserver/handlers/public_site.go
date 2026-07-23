@@ -9,14 +9,31 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"growth-lms/internal/cache"
 	"growth-lms/internal/models"
 )
+
+// catalogTTL bounds how long a published-course catalog may be served from
+// cache before a fresh read. Short enough that a publish/unpublish that
+// somehow misses invalidation still self-heals within a minute.
+const catalogTTL = 60 * time.Second
+
+// publishedCatalog returns an org's published-course list through the Task 11
+// read-through cache, keyed by org ID. Falls back to a direct DB read when the
+// cache is disabled or Redis is unavailable.
+func (d *AuthDeps) publishedCatalog(ctx context.Context, orgID string) ([]models.PublishedCourse, error) {
+	return cache.GetOrLoad(ctx, d.Catalog, orgID, catalogTTL, func() ([]models.PublishedCourse, error) {
+		return d.Courses.ListPublished(ctx, d.Pool, orgID)
+	})
+}
 
 // PublicOrgHome renders GET /o/:org_slug — the org's landing page
 // (org_pages slug "home") if one has been published, else a minimal
@@ -146,7 +163,7 @@ func Sitemap(d *AuthDeps) gin.HandlerFunc {
 
 		base := fmt.Sprintf("%s/o/%s", d.Config.BaseURL, org.Slug)
 
-		courses, err := d.Courses.ListPublished(ctx, d.Pool, org.ID)
+		courses, err := d.publishedCatalog(ctx, org.ID)
 		if err != nil {
 			c.String(http.StatusInternalServerError, "internal error")
 			return
@@ -204,7 +221,7 @@ func EmbedCatalog(d *AuthDeps) gin.HandlerFunc {
 			c.String(http.StatusNotFound, "organization not found")
 			return
 		}
-		courses, err := d.Courses.ListPublished(ctx, d.Pool, org.ID)
+		courses, err := d.publishedCatalog(ctx, org.ID)
 		if err != nil {
 			c.String(http.StatusInternalServerError, "internal error")
 			return

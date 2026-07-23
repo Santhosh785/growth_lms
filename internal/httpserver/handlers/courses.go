@@ -303,6 +303,9 @@ func PublishCourse(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
+		// Drop the org's cached catalog so the newly published course appears
+		// on the public site promptly (else it waits out the TTL).
+		d.Catalog.Invalidate(c.Request.Context(), course.OrgID)
 		c.JSON(http.StatusOK, courseResponse(updated))
 	}
 }
@@ -331,6 +334,9 @@ func UnpublishCourse(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
+		// Drop the org's cached catalog so the unpublished course disappears
+		// from the public site promptly.
+		d.Catalog.Invalidate(c.Request.Context(), course.OrgID)
 		c.JSON(http.StatusOK, courseResponse(updated))
 	}
 }

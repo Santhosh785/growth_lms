@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>{{.Lesson.Title}} — {{.Course.Title}}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
@@ -16,6 +16,7 @@
 </head>
 <body>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   <p><a href="/courses/{{.Course.ID}}/learn">&larr; Back to course</a></p>
   <h1>{{.Lesson.Title}}</h1>
 
@@ -26,7 +27,9 @@
     {{else if eq .Type "image"}}
       <img src="{{.ImageURL}}" alt="{{.AltText}}">
     {{else if eq .Type "video"}}
-      <video id="video-{{.ID}}" controls src="{{.VideoURL}}"></video>
+      <video id="video-{{.ID}}" controls src="{{.VideoURL}}">
+        <track kind="captions" srclang="en" label="English" src="">{{/* captions track wired when VTT available */}}
+      </video>
       <script>
         (function () {
           var v = document.getElementById("video-{{.ID}}");
@@ -96,7 +99,7 @@
       </script>
     {{else if eq .Type "assignment"}}
       <p>{{.AssignmentInstructions}}</p>
-      <input type="file" id="file-{{.ID}}">
+      <input type="file" id="file-{{.ID}}" aria-label="Assignment file upload">
       <button type="button" onclick="submitAssignment('{{.ID}}')">Submit assignment</button>
       <p id="assignment-result-{{.ID}}"></p>
       <script>
@@ -139,5 +142,6 @@
     <div>{{if .PrevLessonID}}<a href="/courses/{{.Course.ID}}/learn/lessons/{{.PrevLessonID}}"><button type="button">&larr; Previous</button></a>{{end}}</div>
     <div>{{if .NextLessonID}}<a href="/courses/{{.Course.ID}}/learn/lessons/{{.NextLessonID}}"><button type="button">Next &rarr;</button></a>{{end}}</div>
   </div>
+  </main>
 </body>
 </html>

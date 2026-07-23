@@ -7,6 +7,7 @@ import (
 
 	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
+	"growth-lms/internal/cache"
 	"growth-lms/internal/codeexec"
 	"growth-lms/internal/config"
 	"growth-lms/internal/media"
@@ -133,4 +134,8 @@ type AuthDeps struct {
 	// Task 10: platform-owner administrative actions (suspend/deactivate/
 	// takedown) and the audit-log viewer.
 	AdminOps *models.AdminOpsRepo
+
+	// Task 11: read-through cache for hot, low-churn public read paths
+	// (the anonymous published-course catalog). Nil-safe.
+	Catalog *cache.Cache
 }

@@ -8,9 +8,11 @@
     .badge { font-size: 3rem; }
     .valid { color: #2b7; }
     .invalid { color: #c33; }
+    :focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
   </style>
 </head>
 <body>
+  <main id="main-content">
   {{if .Found}}
     <p class="badge valid">&#10003;</p>
     <h1>Certificate Verified</h1>
@@ -23,5 +25,6 @@
     <h1>Certificate Not Found</h1>
     <p>No certificate matches ID <code>{{.CertificateID}}</code>.</p>
   {{end}}
+  </main>
 </body>
 </html>

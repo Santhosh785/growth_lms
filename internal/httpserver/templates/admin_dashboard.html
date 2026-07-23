@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>{{.OrgName}} — Admin Dashboard</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
@@ -18,6 +18,7 @@
 </head>
 <body>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   {{if .IsPlatformDrilldown}}
   <p><a href="/admin/organizations">&larr; Back to all organizations</a></p>
   {{end}}
@@ -101,5 +102,6 @@
       <p class="empty">No orders in this window.</p>
     {{end}}
   </section>
+  </main>
 </body>
 </html>

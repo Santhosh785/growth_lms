@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Community — Growth LMS</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="/static/htmx.min.js"></script>
 {{template "nav-styles" .}}
 <style>
   body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
@@ -19,12 +19,14 @@
 </head>
 <body>
 {{template "nav-placeholder" .}}
+<main id="main-content">
 <h1>Community</h1>
 <form class="newthread" onsubmit="return createThread(event)">
-  <input id="title" placeholder="Start a new discussion…" required>
+  <input id="title" placeholder="Start a new discussion…" aria-label="New discussion title" required>
   <button type="submit">Post</button>
 </form>
 <div id="threads">Loading…</div>
+</main>
 
 <script>
 const slug = {{.Slug}};

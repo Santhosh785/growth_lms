@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"growth-lms/internal/httpserver/middleware"
+	"growth-lms/internal/media"
 	"growth-lms/internal/models"
 )
 
@@ -24,6 +25,12 @@ func UploadVideo(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
+		filename, err := media.ValidateUploadName(models.AssetTypeVideo, req.Filename)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		req.Filename = filename
 
 		course, _ := middleware.CourseFromGin(c)
 		ac, _ := middleware.AuthContextFromGin(c)
@@ -90,6 +97,12 @@ func UploadFile(d *AuthDeps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "type must be image or file"})
 			return
 		}
+		filename, err := media.ValidateUploadName(req.Type, req.Filename)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		req.Filename = filename
 
 		course, _ := middleware.CourseFromGin(c)
 		ac, _ := middleware.AuthContextFromGin(c)
@@ -153,6 +166,15 @@ func UploadFileComplete(d *AuthDeps) gin.HandlerFunc {
 		}
 		if !exists {
 			c.JSON(http.StatusConflict, gin.H{"error": "object was not found in storage; upload did not complete"})
+			return
+		}
+
+		// The signed-URL PUT bypasses the app, so this is the first point the
+		// server sees the real byte count. Enforce the per-type ceiling here
+		// and fail the asset if the browser uploaded something oversized.
+		if limit := media.MaxUploadBytes(asset.Type); sizeBytes > limit {
+			_, _ = d.Assets.SetProcessingStatus(ctx, tx, asset.ID, models.ProcessingStatusFailed, nil, nil)
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": media.ErrTooLarge.Error()})
 			return
 		}
 

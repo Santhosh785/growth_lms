@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Grading: {{.Course.Title}}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
@@ -16,6 +16,7 @@
 </head>
 <body>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   <h1>Grading queue: {{.Course.Title}}</h1>
 
   {{if .Submissions}}
@@ -29,7 +30,7 @@
       <form onsubmit="return gradeSubmission(event, '{{.ID}}')">
         <label>Grade % <input type="number" name="grade" min="0" max="100" step="0.1" required></label>
         <br>
-        <textarea name="feedback" placeholder="Feedback (optional)"></textarea>
+        <textarea name="feedback" placeholder="Feedback (optional)" aria-label="Feedback (optional)"></textarea>
         <br>
         <button type="submit">Submit grade</button>
       </form>
@@ -39,6 +40,7 @@
   {{else}}
     <p class="empty">No submissions awaiting grading.</p>
   {{end}}
+  </main>
 
   <script>
     async function gradeSubmission(ev, submissionId) {

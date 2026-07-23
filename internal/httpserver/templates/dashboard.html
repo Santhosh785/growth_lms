@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>My Dashboard</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="/static/htmx.min.js"></script>
   {{template "nav-styles" .}}
   <style>
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
@@ -16,6 +16,7 @@
 </head>
 <body>
   {{template "nav-placeholder" .}}
+  <main id="main-content">
   <h1>Dashboard</h1>
   <p class="empty">Signed in as {{.Email}}</p>
 
@@ -65,5 +66,6 @@
       <p class="empty">Nothing awaiting grading.</p>
     {{end}}
   </section>
+  </main>
 </body>
 </html>
