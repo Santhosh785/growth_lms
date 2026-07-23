@@ -21,6 +21,7 @@ import (
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
 	"growth-lms/internal/ratelimit"
+	"growth-lms/internal/realtime"
 	"growth-lms/internal/worker"
 )
 
@@ -166,6 +167,13 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerCommerceRoutes(engine, deps, db, redisClient)
 	registerAdminUIRoutes(engine, deps, db)
 	registerCommunityRoutes(engine, deps, db)
+
+	// Task 7 in-process realtime hub: presence + collaborative board ops.
+	// Board ops are debounce-persisted to collab_boards.snapshot via the
+	// coordinator wired here as the hub's message callback.
+	hub := realtime.NewHub()
+	hub.SetOnMessage(handlers.NewBoardCoordinator(db, deps.Boards).OnMessage)
+	registerRealtimeRoutes(engine, deps, hub)
 
 	// PUBLIC, unauthenticated one-click unsubscribe (Task 7): resolved via
 	// the resolve_unsubscribe SECURITY DEFINER function against the pool, so
@@ -711,6 +719,17 @@ func registerCommunityRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 	navAuthed.Use(middleware.Authenticate(d.Verifier))
 	navAuthed.Use(middleware.WithRequestTx(db))
 	navAuthed.GET("/notifications/unread-count", handlers.NotificationsUnreadCount(d))
+}
+
+// registerRealtimeRoutes mounts the Task 7 WebSocket endpoints. They
+// authenticate via the session cookie (Authenticate) and authorize with a
+// direct membership check inside the handler — deliberately NOT WithRequestTx,
+// since a long-lived socket must not hold a request transaction open.
+func registerRealtimeRoutes(engine *gin.Engine, d *handlers.AuthDeps, hub *realtime.Hub) {
+	ws := engine.Group("/ws")
+	ws.Use(middleware.Authenticate(d.Verifier))
+	ws.GET("/courses/:courseId/presence", handlers.CoursePresenceSocket(d, hub))
+	ws.GET("/boards/:boardId", handlers.BoardSocket(d, hub))
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
