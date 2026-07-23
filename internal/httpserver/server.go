@@ -130,6 +130,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		CommercePayments:  models.NewPaymentRepo(),
 		Refunds:           models.NewRefundRepo(),
 		PaymentAuditTrail: models.NewPaymentAuditRepo(),
+
+		Threads:           models.NewDiscussionThreadRepo(),
+		Posts:             models.NewDiscussionPostRepo(),
+		Reactions:         models.NewPostReactionRepo(),
+		Mentions:          models.NewPostMentionRepo(),
+		Reports:           models.NewContentReportRepo(),
+		Notifications:     models.NewNotificationRepo(),
+		NotificationPrefs: models.NewNotificationPreferenceRepo(),
+		UnsubscribeTokens: models.NewUnsubscribeTokenRepo(),
+		Boards:            models.NewCollabBoardRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session

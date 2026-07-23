@@ -68,4 +68,15 @@ type AuthDeps struct {
 	Refunds           *models.RefundRepo
 	PaymentAuditTrail *models.PaymentAuditRepo
 	PlatformSettings  *models.PlatformSettingsRepo
+
+	// Task 7: communities, notifications, collaboration.
+	Threads           *models.DiscussionThreadRepo
+	Posts             *models.DiscussionPostRepo
+	Reactions         *models.PostReactionRepo
+	Mentions          *models.PostMentionRepo
+	Reports           *models.ContentReportRepo
+	Notifications     *models.NotificationRepo
+	NotificationPrefs *models.NotificationPreferenceRepo
+	UnsubscribeTokens *models.UnsubscribeTokenRepo
+	Boards            *models.CollabBoardRepo
 }
