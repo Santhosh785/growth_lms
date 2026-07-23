@@ -54,6 +54,10 @@ func Run(cfg *config.Config, redisOpt asynq.RedisConnOpt, logger *slog.Logger) e
 			QueueDefault:  4,
 		},
 		Logger: newAsynqLogger(logger),
+		// Task 10 observability: record a system_alert when a task fails for
+		// good (retries exhausted), so operators see failed jobs in the admin
+		// alert stream, not just in logs.
+		ErrorHandler: jobFailureAlertHandler(pool, models.NewAlertRepo(), logger),
 	})
 
 	profiles := models.NewProfileRepo()

@@ -12,6 +12,7 @@ import (
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
+	"growth-lms/internal/quota"
 	"growth-lms/internal/scorm"
 	"growth-lms/internal/simulations"
 )
@@ -120,4 +121,13 @@ type AuthDeps struct {
 	Simulations        *simulations.Service
 	SimulationRepo     *models.SimulationRepo
 	SimulationProgress *models.SimulationProgressRepo
+
+	// Task 10: admin console — plans & limits, runtime feature flags, usage &
+	// quota, operational alerting, and the background-job dashboard.
+	Plans        *models.PlanRepo
+	FeatureFlags *models.FeatureFlagRepo
+	Alerts       *models.AlertRepo
+	QuotaRepo    *models.QuotaRepo
+	Quota        *quota.Service
+	Inspector    *asynq.Inspector
 }

@@ -22,6 +22,7 @@ import (
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
 	"growth-lms/internal/payments"
+	"growth-lms/internal/quota"
 	"growth-lms/internal/ratelimit"
 	"growth-lms/internal/realtime"
 	"growth-lms/internal/scorm"
@@ -78,6 +79,15 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		panic(err)
 	}
 	asyncQueue := worker.NewClient(redisOpt)
+
+	// Task 10 background-job dashboard: an asynq inspector over the same
+	// Redis the worker consumes. Read-only; used only by the platform-owner
+	// jobs endpoints.
+	inspector := asynq.NewInspector(redisOpt)
+
+	planRepo := models.NewPlanRepo()
+	quotaRepo := models.NewQuotaRepo()
+	aiUsageRepo := models.NewAIUsageRepo()
 
 	deps := &handlers.AuthDeps{
 		Config:      cfg,
@@ -155,7 +165,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 
 		AI:            ai.NewServiceFromSettings(cfg.AI.Enabled, cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model),
 		AIGenerations: models.NewAIGenerationRepo(),
-		AIUsage:       models.NewAIUsageRepo(),
+		AIUsage:       aiUsageRepo,
 		AITutor:       models.NewAITutorRepo(),
 
 		PodcastShows:     models.NewPodcastShowRepo(),
@@ -180,6 +190,14 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		Simulations:        simulations.NewService(cfg.Simulations.MaxSourceBytes, cfg.Simulations.MaxParameters),
 		SimulationRepo:     models.NewSimulationRepo(),
 		SimulationProgress: models.NewSimulationProgressRepo(),
+
+		// Task 10: admin console — plans/limits, feature flags, quota, alerts, jobs.
+		Plans:        planRepo,
+		FeatureFlags: models.NewFeatureFlagRepo(),
+		Alerts:       models.NewAlertRepo(),
+		QuotaRepo:    quotaRepo,
+		Quota:        quota.New(planRepo, quotaRepo, aiUsageRepo),
+		Inspector:    inspector,
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -205,6 +223,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerLearnerUIRoutes(engine, deps, db)
 	registerCommerceRoutes(engine, deps, db, redisClient)
 	registerAdminUIRoutes(engine, deps, db)
+	registerAdminAPIRoutes(engine, deps, db)
 	registerCommunityRoutes(engine, deps, db)
 	registerGrowthRoutes(engine, deps, db)
 	registerAIRoutes(engine, deps, db)
@@ -962,6 +981,63 @@ func registerAdminUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	platformOwnerOnly := middleware.RequirePlatformOwner(d.Profiles)
 	authed.GET("/admin/organizations", platformOwnerOnly, handlers.PlatformAdminDashboardPage(d))
 	authed.GET("/admin/organizations/:org_slug", platformOwnerOnly, handlers.PlatformAdminOrgDetailPage(d))
+}
+
+// registerAdminAPIRoutes mounts Task 10's admin JSON API: plan-catalog and
+// feature-flag management, usage/quota reporting, operational alerting, and the
+// background-job dashboard. Two access tiers:
+//
+//   - Platform-owner (/api/admin/*): no :org_slug ResolveOrg — RequirePlatformOwner
+//     is the only gate (it has no org to resolve), matching registerAdminUIRoutes'
+//     platform pages and the /admin-register precedent. Routes that name an org
+//     (e.g. /api/admin/orgs/:org_slug/plan) resolve it by slug inside the handler.
+//   - Org-owner (/api/orgs/:org_slug/*): the standard ResolveOrg + RequireRole(owner)
+//     chain from registerOrgRoutes, for an owner managing their own org's flag
+//     overrides, quota view, and alerts.
+//
+// These are Bearer/cookie JSON routes, so — like every other /api group — no
+// CSRF middleware (that guards only the cookie-driven HTML editor surface). RLS
+// on plans/feature_flags/org_feature_flags/system_alerts enforces the same
+// platform-vs-org split independently of these route gates.
+func registerAdminAPIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	// --- Platform-owner surface ---------------------------------------------
+	admin := authed.Group("/admin")
+	admin.Use(middleware.RequirePlatformOwner(d.Profiles))
+
+	admin.GET("/plans", handlers.ListPlans(d))
+	admin.POST("/plans", handlers.CreatePlan(d))
+	admin.GET("/plans/:plan_id", handlers.GetPlan(d))
+	admin.PATCH("/plans/:plan_id", handlers.UpdatePlan(d))
+
+	admin.GET("/feature-flags", handlers.ListFeatureFlags(d))
+	admin.PUT("/feature-flags/:key", handlers.UpsertFeatureFlag(d))
+	admin.DELETE("/feature-flags/:key", handlers.DeleteFeatureFlag(d))
+
+	admin.GET("/orgs/:org_slug/quota", handlers.PlatformOrgQuota(d))
+	admin.PUT("/orgs/:org_slug/plan", handlers.AssignOrgPlan(d))
+
+	admin.GET("/alerts", handlers.ListAlerts(d))
+	admin.POST("/alerts/:alert_id/resolve", handlers.ResolveAlert(d))
+
+	admin.GET("/jobs", handlers.JobsDashboard(d))
+
+	// --- Org-owner surface --------------------------------------------------
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	ownerOnly := middleware.RequireRole(auth.RoleOwner)
+
+	org.GET("/quota", ownerOnly, handlers.OrgQuotaDashboard(d))
+
+	org.GET("/feature-flags", ownerOnly, handlers.ListOrgFeatureFlags(d))
+	org.PUT("/feature-flags/:key", ownerOnly, handlers.SetOrgFeatureFlag(d))
+	org.DELETE("/feature-flags/:key", ownerOnly, handlers.ClearOrgFeatureFlag(d))
+
+	org.GET("/alerts", ownerOnly, handlers.ListOrgAlerts(d))
+	org.POST("/alerts/:alert_id/resolve", ownerOnly, handlers.ResolveOrgAlert(d))
 }
 
 // registerCommunityRoutes mounts Task 7's discussions, moderation,

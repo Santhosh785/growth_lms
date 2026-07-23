@@ -12,6 +12,7 @@ import (
 	"growth-lms/internal/dbctx"
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/models"
+	"growth-lms/internal/quota"
 )
 
 // resolveOrgBySlugForCourseCreation is CreateCourse/ListCourses' own
@@ -77,6 +78,11 @@ func CreateCourse(d *AuthDeps) gin.HandlerFunc {
 
 		ac, _ := middleware.AuthContextFromGin(c)
 		tx, _ := middleware.RequestTxFromGin(c)
+
+		// Task 10 plan limits: refuse to create beyond the org's course cap.
+		if !d.enforceQuota(c, orgID, quota.DimCourses) {
+			return
+		}
 
 		course, err := d.Courses.Create(c.Request.Context(), tx, orgID, ac.UserID, req.Title, req.Description, req.CategoryID)
 		if err != nil {

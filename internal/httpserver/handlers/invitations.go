@@ -14,6 +14,7 @@ import (
 	"growth-lms/internal/auth"
 	"growth-lms/internal/httpserver/middleware"
 	"growth-lms/internal/models"
+	"growth-lms/internal/quota"
 )
 
 const invitationTTL = 7 * 24 * time.Hour
@@ -62,6 +63,15 @@ func CreateInvitation(d *AuthDeps) gin.HandlerFunc {
 		tx, _ := middleware.RequestTxFromGin(c)
 		ac, _ := middleware.AuthContextFromGin(c)
 		oc, _ := middleware.OrgContextFromGin(c)
+
+		// Task 10 plan limits: refuse to invite past the org's member cap.
+		// Enforced at invite time (the practical growth point) rather than at
+		// acceptance, so an owner gets immediate feedback; the cap counts
+		// current memberships, so pending invites can slightly overshoot — an
+		// acceptable soft-cap tradeoff (see enforceQuota's doc comment).
+		if !d.enforceQuota(c, oc.OrgID, quota.DimMembers) {
+			return
+		}
 
 		email := strings.ToLower(strings.TrimSpace(req.Email))
 		inv, err := d.Invitations.Create(c.Request.Context(), tx, oc.OrgID, email, req.Role, ac.UserID, token, time.Now().Add(invitationTTL))
