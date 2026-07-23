@@ -36,6 +36,7 @@ type Client interface {
 	UpdatePassword(ctx context.Context, accessToken, newPassword string) error
 	SignOut(ctx context.Context, accessToken string) error
 	AdminDeleteUser(ctx context.Context, userID string) error
+	AdminCreateUser(ctx context.Context, email, password string, emailConfirmed bool) error
 }
 
 // SupabaseClient is the real Client implementation, talking to Supabase's
@@ -194,6 +195,22 @@ func (c *SupabaseClient) SignOut(ctx context.Context, accessToken string) error 
 
 func (c *SupabaseClient) AdminDeleteUser(ctx context.Context, userID string) error {
 	resp, err := c.do(ctx, http.MethodDelete, "/auth/v1/admin/users/"+userID, c.serviceRoleKey, c.serviceRoleKey, nil)
+	if err != nil {
+		return err
+	}
+	return checkStatus(resp)
+}
+
+// AdminCreateUser creates a user via the Admin API with email_confirm set to skip verification.
+// This bypasses signup rate limits and is suitable for test users and admin account creation.
+func (c *SupabaseClient) AdminCreateUser(ctx context.Context, email, password string, emailConfirmed bool) error {
+	resp, err := c.do(ctx, http.MethodPost, "/auth/v1/admin/users", c.serviceRoleKey, c.serviceRoleKey, map[string]any{
+		"email":         email,
+		"password":      password,
+		"email_confirm": emailConfirmed,
+		"user_metadata": map[string]any{},
+		"app_metadata":  map[string]any{},
+	})
 	if err != nil {
 		return err
 	}

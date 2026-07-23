@@ -7,6 +7,8 @@
 /tmp/
 /bin/
 *.exe
+# Compiled server binary (built by `go build -o app ./cmd/app`)
+/app
 
 # Supabase local stack state
 /supabase/.branches

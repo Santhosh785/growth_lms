@@ -148,7 +148,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	engine.GET("/nav", middleware.OptionalAuthenticate(verifier), middleware.WithRequestTx(db), handlers.NavFragment(deps))
 	engine.GET("/nav/logout", middleware.Authenticate(verifier), handlers.NavLogoutRedirect(deps))
 
-	registerAuthRoutes(engine, deps, redisClient)
+	registerAuthRoutes(engine, deps, db, redisClient)
 	registerOrgRoutes(engine, deps, db)
 	registerCourseRoutes(engine, deps, db, redisClient)
 	registerLearnerRoutes(engine, deps, db)
@@ -174,7 +174,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 // and password-reset-request are additionally protected by a 5-per-15-min
 // per-IP rate limit; Login layers a per-email exponential backoff on top
 // (see handlers.Login).
-func registerAuthRoutes(engine *gin.Engine, d *handlers.AuthDeps, redisClient *redis.Client) {
+func registerAuthRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool, redisClient *redis.Client) {
 	authLimit := func(prefix string) gin.HandlerFunc {
 		limiter := ratelimit.New(redisClient, "ratelimit:"+prefix, 5, 15*time.Minute)
 		return middleware.RateLimit(limiter, middleware.ByClientIP)
@@ -191,6 +191,18 @@ func registerAuthRoutes(engine *gin.Engine, d *handlers.AuthDeps, redisClient *r
 	authed.Use(middleware.Authenticate(d.Verifier))
 	authed.POST("/logout", handlers.Logout(d))
 	authed.DELETE("/delete-account", handlers.DeleteAccount(d))
+
+	// admin-register creates a verified user via Supabase's Admin API,
+	// bypassing email confirmation and the public signup rate limit — a
+	// privileged provisioning action, so it is gated behind platform-owner
+	// authentication (Authenticate + WithRequestTx + RequirePlatformOwner,
+	// same chain as the /admin/organizations dashboards) rather than left
+	// open. A per-IP rate limit is layered on as defence in depth.
+	adminAuthed := api.Group("")
+	adminAuthed.Use(middleware.Authenticate(d.Verifier))
+	adminAuthed.Use(middleware.WithRequestTx(db))
+	adminAuthed.POST("/admin-register", authLimit("auth-admin-register"),
+		middleware.RequirePlatformOwner(d.Profiles), handlers.AdminRegister(d))
 }
 
 // registerOrgRoutes mounts /api/orgs/* and /api/invitations/*: everything

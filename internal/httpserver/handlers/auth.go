@@ -73,6 +73,37 @@ func Register(d *AuthDeps) gin.HandlerFunc {
 	}
 }
 
+// AdminRegister creates a verified user via the Admin API, bypassing email
+// confirmation. This is a privileged provisioning action for admin/test user
+// creation, not public signup — its route is gated behind platform-owner auth
+// (middleware.RequirePlatformOwner) and a per-IP rate limit in server.go.
+func AdminRegister(d *AuthDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req registerRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+			return
+		}
+
+		if err := d.Supabase.AdminCreateUser(c.Request.Context(), req.Email, req.Password, true); err != nil {
+			_ = d.Audit.Record(c.Request.Context(), d.Pool, models.AuditEvent{
+				Action: "auth.admin_register_failed", ResourceType: "profile",
+				Details:   map[string]any{"email": req.Email},
+				IPAddress: c.ClientIP(), UserAgent: c.Request.UserAgent(),
+			})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "admin registration failed"})
+			return
+		}
+
+		_ = d.Audit.Record(c.Request.Context(), d.Pool, models.AuditEvent{
+			Action: "auth.admin_register", ResourceType: "profile",
+			Details:   map[string]any{"email": req.Email},
+			IPAddress: c.ClientIP(), UserAgent: c.Request.UserAgent(),
+		})
+		c.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
+	}
+}
+
 type verifyEmailRequest struct {
 	TokenHash string `json:"token_hash" binding:"required"`
 }
