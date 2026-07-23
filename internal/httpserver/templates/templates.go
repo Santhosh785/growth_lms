@@ -16,7 +16,7 @@ import (
 	"html/template"
 )
 
-//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html nav.html
+//go:embed course_editor.html course_learn.html lesson_player.html dashboard.html submissions.html certificate_verify.html home.html checkout.html admin_dashboard.html admin_organizations.html order_status.html nav.html discussions.html thread.html notifications.html board.html moderation.html
 var fs embed.FS
 
 // Nav is the shared nav bar every authenticated/semi-public page embeds
@@ -75,6 +75,23 @@ var AdminDashboard = parseWithNav("admin_dashboard.html")
 // AdminOrganizations is the platform-owner cross-organization dashboard
 // page (Task 9 admin-dashboard; handlers.PlatformAdminDashboardPage).
 var AdminOrganizations = parseWithNav("admin_organizations.html")
+
+// Discussions is the Task 7 org community page (thread list + composer).
+var Discussions = parseWithNav("discussions.html")
+
+// Thread is the Task 7 discussion thread page (posts, replies, reactions,
+// @-mention picker, report, and moderator actions).
+var Thread = parseWithNav("thread.html")
+
+// Notifications is the Task 7 in-app notification inbox page.
+var Notifications = parseWithNav("notifications.html")
+
+// Board is the Task 7 collaborative whiteboard page (presence + live notes
+// over the /ws/boards/:boardId socket).
+var Board = parseWithNav("board.html")
+
+// Moderation is the Task 7 moderator report-queue page.
+var Moderation = parseWithNav("moderation.html")
 
 // OrderStatus is the "processing your payment" page a learner's browser
 // lands on after Razorpay's checkout.js success callback (Task 10

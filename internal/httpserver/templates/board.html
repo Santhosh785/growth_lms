@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board — Growth LMS</title>
+{{template "nav-styles" .}}
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 1.5rem auto; padding: 0 1rem; }
+  #canvas { position: relative; height: 520px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; background: #fafafa; cursor: crosshair; }
+  .note { position: absolute; width: 120px; min-height: 60px; padding: 6px; background: #fff8b0; border: 1px solid #e0d060; border-radius: 4px; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  #presence { color: #555; margin: 0.5rem 0; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#2a9d3a; margin-right:4px; }
+</style>
+</head>
+<body>
+{{template "nav-placeholder" .}}
+<h1>{{.Title}}</h1>
+<div id="presence"><span class="dot"></span><span id="present">connecting…</span></div>
+<p style="color:#666;font-size:0.9rem">Click anywhere to add a sticky note. Changes sync live with everyone viewing this board.</p>
+<div id="canvas"></div>
+
+<script>
+const boardId = {{.BoardID}};
+const notes = {};
+
+async function loadSnapshot() {
+  const r = await fetch(`/api/boards/${boardId}`, {headers:{'Accept':'application/json'}});
+  if (!r.ok) return;
+  const data = await r.json();
+  const snap = data.snapshot || {};
+  for (const [id, el] of Object.entries(snap)) renderNote(id, el);
+}
+function renderNote(id, el) {
+  let node = notes[id];
+  if (!node) { node = document.createElement('div'); node.className='note'; notes[id]=node; document.getElementById('canvas').appendChild(node); }
+  node.style.left = el.x + 'px'; node.style.top = el.y + 'px'; node.textContent = el.text || '';
+}
+function removeNote(id){ if (notes[id]) { notes[id].remove(); delete notes[id]; } }
+
+const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(`${proto}://${location.host}/ws/boards/${boardId}`);
+ws.onmessage = (ev) => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === 'presence') {
+    document.getElementById('present').textContent = (msg.users||[]).map(u=>u.name).join(', ') || 'just you';
+  } else if (msg.type === 'op') {
+    if (msg.op === 'set') renderNote(msg.element_id, msg.element || {});
+    else if (msg.op === 'delete') removeNote(msg.element_id);
+  }
+};
+ws.onclose = () => { document.getElementById('present').textContent = 'disconnected'; };
+
+document.getElementById('canvas').addEventListener('click', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const text = prompt('Note text:'); if (text === null) return;
+  const id = 'n' + Math.random().toString(36).slice(2, 9);
+  const el = { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top), text };
+  renderNote(id, el);
+  ws.send(JSON.stringify({ type:'op', op:'set', element_id: id, element: el }));
+});
+loadSnapshot();
+</script>
+</body>
+</html>

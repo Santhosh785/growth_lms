@@ -174,6 +174,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	hub := realtime.NewHub()
 	hub.SetOnMessage(handlers.NewBoardCoordinator(db, deps.Boards).OnMessage)
 	registerRealtimeRoutes(engine, deps, hub)
+	registerCommunityUIRoutes(engine, deps, db)
 
 	// PUBLIC, unauthenticated one-click unsubscribe (Task 7): resolved via
 	// the resolve_unsubscribe SECURITY DEFINER function against the pool, so
@@ -725,6 +726,31 @@ func registerCommunityRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpo
 // authenticate via the session cookie (Authenticate) and authorize with a
 // direct membership check inside the handler — deliberately NOT WithRequestTx,
 // since a long-lived socket must not hold a request transaction open.
+// registerCommunityUIRoutes mounts Task 7's server-rendered HTML pages
+// (community, thread, notifications, board, moderation queue). Cookie auth +
+// WithRequestTx like the other UI surfaces; each thin page drives the JSON API
+// with same-origin fetch.
+func registerCommunityUIRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authed := engine.Group("")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	authed.GET("/notifications", handlers.NotificationsPage(d))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+	org.GET("/community", handlers.CommunityPage(d))
+	org.GET("/moderation", middleware.RequireRole(auth.RoleModerator, auth.RoleOwner), handlers.ModerationPage(d))
+
+	thread := authed.Group("/community/threads/:threadId")
+	thread.Use(middleware.ResolveThreadOrg(d.Threads, d.Memberships, d.Profiles))
+	thread.GET("", handlers.ThreadPage(d))
+
+	board := authed.Group("/community/boards/:boardId")
+	board.Use(middleware.ResolveBoardOrg(d.Boards, d.Memberships, d.Profiles))
+	board.GET("", handlers.BoardPage(d))
+}
+
 func registerRealtimeRoutes(engine *gin.Engine, d *handlers.AuthDeps, hub *realtime.Hub) {
 	ws := engine.Group("/ws")
 	ws.Use(middleware.Authenticate(d.Verifier))

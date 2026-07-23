@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notifications — Growth LMS</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+{{template "nav-styles" .}}
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; }
+  .n { border: 1px solid #e2e2e2; border-radius: 8px; padding: 0.7rem 1rem; margin: 0.5rem 0; }
+  .n.unread { border-left: 4px solid #1a56db; background: #f5f8ff; }
+  .n a { text-decoration: none; color: inherit; }
+  .n .meta { color: #888; font-size: 0.8rem; }
+  button { padding: 0.45rem 0.8rem; cursor: pointer; }
+</style>
+</head>
+<body>
+{{template "nav-placeholder" .}}
+<h1>Notifications</h1>
+<button onclick="markAll()">Mark all read</button>
+<div id="list" style="margin-top:1rem">Loading…</div>
+
+<script>
+async function load() {
+  const r = await fetch('/api/notifications', {headers:{'Accept':'application/json'}});
+  const data = await r.json();
+  const el = document.getElementById('list');
+  if (!data.notifications || !data.notifications.length) { el.innerHTML = '<p>No notifications.</p>'; return; }
+  el.innerHTML = data.notifications.map(n => `
+    <div class="n ${n.read_at?'':'unread'}" onclick="open('${n.id}','${n.link_url||''}')">
+      <div><strong>${escapeHtml(n.title)}</strong></div>
+      <div>${escapeHtml(n.body||'')}</div>
+      <div class="meta">${new Date(n.created_at).toLocaleString()}</div>
+    </div>`).join('');
+}
+async function open(id, link){ await fetch(`/api/notifications/mark-read/${id}`,{method:'POST'}); if (link) location.href = link; else load(); }
+async function markAll(){ await fetch('/api/notifications/read-all',{method:'POST'}); load(); }
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+load();
+</script>
+</body>
+</html>

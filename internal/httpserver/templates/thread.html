@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discussion — Growth LMS</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+{{template "nav-styles" .}}
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  .post { border: 1px solid #e2e2e2; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.6rem 0; }
+  .post.reply { margin-left: 2rem; background: #fafafa; }
+  .post .meta { color: #888; font-size: 0.8rem; margin-bottom: 0.3rem; }
+  .actions button { font-size: 0.8rem; margin-right: 0.4rem; padding: 0.2rem 0.5rem; cursor: pointer; }
+  textarea { width: 100%; min-height: 3rem; padding: 0.5rem; box-sizing: border-box; }
+  #picker { border: 1px solid #ccc; border-radius: 6px; max-height: 160px; overflow:auto; display:none; position:absolute; background:#fff; }
+  #picker div { padding: 0.3rem 0.6rem; cursor: pointer; }
+  #picker div:hover { background: #eef; }
+  button { padding: 0.45rem 0.8rem; cursor: pointer; }
+</style>
+</head>
+<body>
+{{template "nav-placeholder" .}}
+<p><a href="javascript:history.back()">← Back</a></p>
+<h1 id="thread-title">{{.Title}}</h1>
+<div id="posts">Loading…</div>
+
+<h3>Reply</h3>
+<div style="position:relative">
+  <textarea id="body" placeholder="Write a reply… use @ to mention"></textarea>
+  <div id="picker"></div>
+</div>
+<div style="margin-top:0.5rem">
+  <button onclick="submitPost()">Post reply</button>
+  <span id="replying"></span>
+</div>
+
+<script>
+const threadId = {{.ThreadID}};
+const meId = {{.UserID}};
+const isModerator = {{.IsModerator}};
+let members = [], replyTo = null;
+
+async function load() {
+  const r = await fetch(`/api/threads/${threadId}`, {headers:{'Accept':'application/json'}});
+  if (!r.ok) { document.getElementById('posts').textContent = 'Could not load thread.'; return; }
+  const data = await r.json();
+  document.getElementById('thread-title').textContent = data.thread.title + (data.thread.is_locked ? ' 🔒' : '');
+  const roots = data.posts.filter(p => !p.parent_post_id);
+  const replies = data.posts.filter(p => p.parent_post_id);
+  document.getElementById('posts').innerHTML = roots.map(p => renderPost(p, false) +
+    replies.filter(rp => rp.parent_post_id === p.id).map(rp => renderPost(rp, true)).join('')
+  ).join('');
+}
+function renderPost(p, isReply) {
+  const reactions = Object.entries(p.reactions || {}).map(([e,c]) => `${e} ${c}`).join('  ');
+  const canMod = isModerator || p.author_id === meId;
+  return `<div class="post ${isReply?'reply':''}">
+    <div class="meta">${p.author_id === meId ? 'You' : 'Member'} · ${new Date(p.created_at).toLocaleString()}${p.edited_at?' (edited)':''}</div>
+    <div>${escapeHtml(stripTokens(p.body))}</div>
+    <div class="actions" style="margin-top:0.4rem">
+      <button onclick="react('${p.id}','👍')">👍</button>
+      <button onclick="react('${p.id}','🎉')">🎉</button>
+      ${!isReply?`<button onclick="setReply('${p.id}')">Reply</button>`:''}
+      <button onclick="report('${p.id}')">Report</button>
+      ${canMod?`<button onclick="del('${p.id}')">Delete</button>`:''}
+      ${isModerator?`<button onclick="hide('${p.id}')">Hide</button>`:''}
+      <span style="color:#888">${reactions}</span>
+    </div>
+  </div>`;
+}
+function setReply(id){ replyTo = id; document.getElementById('replying').textContent = 'Replying to a post'; document.getElementById('body').focus(); }
+async function submitPost() {
+  const body = document.getElementById('body').value.trim();
+  if (!body) return;
+  const r = await fetch(`/api/threads/${threadId}/posts`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({body, parent_post_id: replyTo})
+  });
+  if (r.ok) { document.getElementById('body').value=''; replyTo=null; document.getElementById('replying').textContent=''; load(); }
+  else alert('Could not post');
+}
+async function react(id, emoji){ await fetch(`/api/posts/${id}/reactions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emoji})}); load(); }
+async function report(id){ const reason = prompt('Reason for reporting?'); if(!reason) return; await fetch(`/api/posts/${id}/report`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})}); alert('Reported. Moderators have been notified.'); }
+async function del(id){ if(!confirm('Delete this post?')) return; await fetch(`/api/posts/${id}`,{method:'DELETE'}); load(); }
+async function hide(id){ await fetch(`/api/posts/${id}/hide`,{method:'POST'}); load(); }
+
+// @-mention picker
+async function loadMembers(){ const r = await fetch(`/api/threads/${threadId}/members`); members = (await r.json()).members || []; }
+const ta = document.getElementById('body'), picker = document.getElementById('picker');
+ta.addEventListener('input', () => {
+  const v = ta.value, at = v.lastIndexOf('@');
+  if (at < 0 || /\s/.test(v.slice(at+1))) { picker.style.display='none'; return; }
+  const q = v.slice(at+1).toLowerCase();
+  const matches = members.filter(m => m.name.toLowerCase().includes(q)).slice(0,6);
+  if (!matches.length) { picker.style.display='none'; return; }
+  picker.innerHTML = matches.map(m => `<div onclick="pick('${m.user_id}','${escapeHtml(m.name)}')">${escapeHtml(m.name)}</div>`).join('');
+  picker.style.display='block';
+});
+function pick(id, name){ const v = ta.value, at = v.lastIndexOf('@'); ta.value = v.slice(0,at) + '@['+id+'] '; picker.style.display='none'; ta.focus(); }
+function stripTokens(s){ return s.replace(/@\[[0-9a-fA-F-]{36}\]/g, '@mention'); }
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+load(); loadMembers();
+</script>
+</body>
+</html>

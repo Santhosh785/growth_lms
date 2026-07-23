@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community — Growth LMS</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+{{template "nav-styles" .}}
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  .thread { border: 1px solid #e2e2e2; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.5rem 0; }
+  .thread a { font-weight: 600; text-decoration: none; color: #1a56db; }
+  .thread .meta { color: #888; font-size: 0.8rem; }
+  .pinned { border-color: #f5b301; }
+  form.newthread { display: flex; gap: 0.5rem; margin: 1rem 0; }
+  form.newthread input { flex: 1; padding: 0.5rem; }
+  button { padding: 0.5rem 0.9rem; cursor: pointer; }
+</style>
+</head>
+<body>
+{{template "nav-placeholder" .}}
+<h1>Community</h1>
+<form class="newthread" onsubmit="return createThread(event)">
+  <input id="title" placeholder="Start a new discussion…" required>
+  <button type="submit">Post</button>
+</form>
+<div id="threads">Loading…</div>
+
+<script>
+const slug = {{.Slug}};
+async function loadThreads() {
+  const r = await fetch(`/api/orgs/${slug}/threads`, {headers: {'Accept':'application/json'}});
+  const data = await r.json();
+  const el = document.getElementById('threads');
+  if (!data.threads || !data.threads.length) { el.innerHTML = '<p>No discussions yet. Start one above.</p>'; return; }
+  el.innerHTML = data.threads.map(t => `
+    <div class="thread ${t.is_pinned ? 'pinned' : ''}">
+      <a href="/community/threads/${t.id}">${escapeHtml(t.title)}</a>
+      ${t.is_pinned ? ' 📌' : ''}${t.is_locked ? ' 🔒' : ''}
+      <div class="meta">updated ${new Date(t.updated_at).toLocaleString()}</div>
+    </div>`).join('');
+}
+async function createThread(e) {
+  e.preventDefault();
+  const title = document.getElementById('title').value.trim();
+  if (!title) return false;
+  const r = await fetch(`/api/orgs/${slug}/threads`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title})
+  });
+  if (r.ok) { const t = await r.json(); location.href = `/community/threads/${t.id}`; }
+  else alert('Could not create thread');
+  return false;
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+loadThreads();
+</script>
+</body>
+</html>

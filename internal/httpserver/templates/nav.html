@@ -6,6 +6,8 @@
   .lms-nav .brand { font-weight: bold; opacity: 1; margin-right: 0.5rem; }
   .lms-nav .spacer { flex: 1; }
   .lms-nav .email { opacity: 0.6; font-size: 0.85rem; }
+  .lms-nav .bell { position: relative; }
+  .nav-badge { background: #e02424; color: #fff; border-radius: 999px; font-size: 0.7rem; padding: 0 0.35rem; margin-left: 0.15rem; }
 </style>
 {{end}}
 
@@ -21,12 +23,15 @@
   {{if .LoggedIn}}
     <a href="/dashboard">Dashboard</a>
     {{range .OwnedOrgs}}
-      <a href="/orgs/{{.Slug}}/admin">{{.Name}} Admin</a>
+      <a href="/orgs/{{.Slug}}/community">{{.Name}} Community</a>
+      <a href="/orgs/{{.Slug}}/admin">Admin</a>
+      <a href="/orgs/{{.Slug}}/moderation">Reports</a>
     {{end}}
     {{if .IsPlatformOwner}}
       <a href="/admin/organizations">Platform Admin</a>
     {{end}}
     <span class="spacer"></span>
+    <a class="bell" href="/notifications" title="Notifications">🔔<span id="nav-unread" hx-get="/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="innerHTML"></span></a>
     <span class="email">{{.Email}}</span>
     <a href="/nav/logout">Log out</a>
   {{else}}
