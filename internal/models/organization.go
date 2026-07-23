@@ -316,6 +316,46 @@ func (r *OrgRepo) SetPodcastsEnabled(ctx context.Context, q Querier, orgID strin
 	return nil
 }
 
+// CodeExecSettings is an org's Task 9 sandboxed-code-execution configuration:
+// whether the feature is switched on for this org, and an optional per-org
+// daily execution cap that overrides the platform default (nil = use the
+// platform default).
+type CodeExecSettings struct {
+	Enabled    bool
+	DailyLimit *int64
+}
+
+// GetCodeExecSettings reads an org's code-execution feature flag and per-org
+// daily cap override.
+func (r *OrgRepo) GetCodeExecSettings(ctx context.Context, q Querier, orgID string) (CodeExecSettings, error) {
+	var s CodeExecSettings
+	err := q.QueryRow(ctx, `SELECT code_exec_enabled, code_exec_daily_limit FROM organizations WHERE id = $1`, orgID).
+		Scan(&s.Enabled, &s.DailyLimit)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s, ErrNotFound
+		}
+		return s, fmt.Errorf("models: get org code exec settings: %w", err)
+	}
+	return s, nil
+}
+
+// SetCodeExecSettings updates an org's code-execution feature flag and
+// optional daily cap override. A nil dailyLimit stores NULL (fall back to the
+// platform default).
+func (r *OrgRepo) SetCodeExecSettings(ctx context.Context, q Querier, orgID string, enabled bool, dailyLimit *int64) error {
+	tag, err := q.Exec(ctx, `
+		UPDATE organizations SET code_exec_enabled = $2, code_exec_daily_limit = $3, updated_at = now()
+		WHERE id = $1`, orgID, enabled, dailyLimit)
+	if err != nil {
+		return fmt.Errorf("models: set org code exec settings: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetBunnyLibraryID persists a newly provisioned Bunny Stream library ID
 // for an org. Only ever called once per org (the first video upload finds
 // GetBunnyLibraryID returning "" and calls this immediately after

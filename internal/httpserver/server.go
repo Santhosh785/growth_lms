@@ -14,6 +14,7 @@ import (
 
 	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
+	"growth-lms/internal/codeexec"
 	"growth-lms/internal/config"
 	"growth-lms/internal/httpserver/handlers"
 	"growth-lms/internal/httpserver/middleware"
@@ -157,6 +158,16 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 		PodcastEpisodes:  models.NewPodcastEpisodeRepo(),
 		PodcastPlaylists: models.NewPodcastPlaylistRepo(),
 		PodcastProgress:  models.NewPodcastProgressRepo(),
+
+		CodeExec: codeexec.NewServiceFromSettings(cfg.CodeExec.Enabled, cfg.CodeExec.Runner, codeexec.Limits{
+			CPUMillis:      cfg.CodeExec.DefaultCPUMillis,
+			MemoryBytes:    cfg.CodeExec.DefaultMemoryBytes,
+			WallTimeMillis: cfg.CodeExec.DefaultWallMillis,
+			MaxOutputBytes: cfg.CodeExec.DefaultMaxOutputByte,
+		}),
+		CodeExercises:   models.NewCodeExerciseRepo(),
+		CodeSubmissions: models.NewCodeSubmissionRepo(),
+		CodeExecUsage:   models.NewCodeExecUsageRepo(),
 	}
 
 	// Public landing page: OptionalAuthenticate resolves the session
@@ -186,6 +197,7 @@ func New(cfg *config.Config, logger *slog.Logger, db *pgxpool.Pool, redisClient 
 	registerGrowthRoutes(engine, deps, db)
 	registerAIRoutes(engine, deps, db)
 	registerPodcastRoutes(engine, deps, db)
+	registerCodeExecRoutes(engine, deps, db)
 	registerPublicSiteRoutes(engine, deps)
 
 	// Task 7 in-process realtime hub: presence + collaborative board ops.
@@ -402,6 +414,53 @@ func registerPodcastRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool
 	org.DELETE("/podcasts/playlists/:playlistId", authoring, handlers.DeletePodcastPlaylist(d))
 	org.POST("/podcasts/playlists/:playlistId/items", authoring, handlers.AddPodcastPlaylistItem(d))
 	org.DELETE("/podcasts/playlists/:playlistId/items/:episodeId", authoring, handlers.RemovePodcastPlaylistItem(d))
+}
+
+// registerCodeExecRoutes mounts Task 9's sandboxed code-execution routes — all
+// authed and org-scoped, reusing the same ResolveOrg/RequireRole pattern.
+// Exercise authoring (CRUD, publish) and the usage dashboard are owner/teacher
+// gated; browsing published exercises, running ad-hoc code, submitting against
+// an exercise, and reading one's own submissions are open to any authenticated
+// org member (RLS scopes submissions to the caller); settings are owner-only.
+// Every handler independently enforces the two-flag feature gate (platform
+// LMS_CODE_EXEC_ENABLED AND the org's code_exec_enabled) via handlers'
+// codeExecGate/executeGated — the route gating here is authz only, not the
+// feature gate. There is no public/anonymous surface for this module.
+func registerCodeExecRoutes(engine *gin.Engine, d *handlers.AuthDeps, db *pgxpool.Pool) {
+	authoring := middleware.RequireRole(auth.RoleOwner, auth.RoleTeacher)
+
+	authed := engine.Group("/api")
+	authed.Use(middleware.Authenticate(d.Verifier))
+	authed.Use(middleware.WithRequestTx(db))
+
+	org := authed.Group("/orgs/:org_slug")
+	org.Use(middleware.ResolveOrg(d.Orgs, d.Memberships, d.Profiles))
+
+	// Settings + usage dashboard.
+	org.GET("/code/settings", middleware.RequireRole(auth.RoleOwner), handlers.GetCodeExecSettings(d))
+	org.PATCH("/code/settings", middleware.RequireRole(auth.RoleOwner), handlers.UpdateCodeExecSettings(d))
+	org.GET("/code/usage", authoring, handlers.CodeExecUsageDashboard(d))
+
+	// Exercise authoring (owner/teacher). GET returns full detail incl. the
+	// solution and reference output — never exposed to learners.
+	org.POST("/code/exercises", authoring, handlers.CreateCodeExercise(d))
+	org.GET("/code/exercises", authoring, handlers.ListCodeExercises(d))
+	org.GET("/code/exercises/:exerciseId", authoring, handlers.GetCodeExercise(d))
+	org.PATCH("/code/exercises/:exerciseId", authoring, handlers.UpdateCodeExercise(d))
+	org.POST("/code/exercises/:exerciseId/publish", authoring, handlers.SetCodeExercisePublished(d))
+	org.DELETE("/code/exercises/:exerciseId", authoring, handlers.DeleteCodeExercise(d))
+
+	// Learner-facing catalog (any member): published exercises, solutions
+	// stripped. A distinct path from the authoring GETs so both can coexist.
+	org.GET("/code/catalog", handlers.ListCodeCatalog(d))
+	org.GET("/code/catalog/:exerciseId", handlers.GetCodeCatalogExercise(d))
+
+	// Run + submit + own history (any member; RLS scopes submissions to the
+	// caller). The submit path has an extra segment, so it does not collide
+	// with the authoring GET on /code/exercises/:exerciseId.
+	org.POST("/code/run", handlers.RunCode(d))
+	org.POST("/code/exercises/:exerciseId/submit", handlers.SubmitCodeExercise(d))
+	org.GET("/code/submissions", handlers.ListMyCodeSubmissions(d))
 }
 
 // registerPublicSiteRoutes mounts Task 8's PUBLIC, unauthenticated org

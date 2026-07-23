@@ -45,6 +45,7 @@ type Config struct {
 	Razorpay RazorpayConfig
 	AI       AIConfig
 	Podcasts PodcastsConfig
+	CodeExec CodeExecConfig
 
 	CORS        CORSConfig
 	TrustProxy  bool
@@ -120,6 +121,25 @@ type AIConfig struct {
 // AIConfig.Enabled's two-flag gate (platform AND org).
 type PodcastsConfig struct {
 	Enabled bool
+}
+
+// CodeExecConfig configures Task 9's sandboxed code-execution module.
+// Entirely optional (not in the `required` list): with Enabled false — the
+// default — the module ships the no-op stub runner, so no code is ever run
+// until an operator turns it on AND names a real runner. Mirrors AIConfig's
+// two-flag gate (platform Enabled AND the org's code_exec_enabled toggle).
+// DailyLimit is the platform-wide default per-org daily execution cap; an org
+// may override it via organizations.code_exec_daily_limit. The *Default*
+// limits are the platform maximum resource envelope any single run is clamped
+// to (see internal/codeexec.Service.clamp).
+type CodeExecConfig struct {
+	Enabled              bool
+	Runner               string
+	DailyLimit           int64
+	DefaultCPUMillis     int
+	DefaultMemoryBytes   int64
+	DefaultWallMillis    int
+	DefaultMaxOutputByte int
 }
 
 type CORSConfig struct {
@@ -242,6 +262,15 @@ func Load() (*Config, error) {
 		},
 		Podcasts: PodcastsConfig{
 			Enabled: getEnvBool("LMS_PODCASTS_ENABLED", false),
+		},
+		CodeExec: CodeExecConfig{
+			Enabled:              getEnvBool("LMS_CODE_EXEC_ENABLED", false),
+			Runner:               getEnv("LMS_CODE_EXEC_RUNNER", "stub"),
+			DailyLimit:           getEnvInt64("LMS_CODE_EXEC_DAILY_LIMIT", 500),
+			DefaultCPUMillis:     int(getEnvInt64("LMS_CODE_EXEC_CPU_MILLIS", 5000)),
+			DefaultMemoryBytes:   getEnvInt64("LMS_CODE_EXEC_MEMORY_BYTES", 256<<20),
+			DefaultWallMillis:    int(getEnvInt64("LMS_CODE_EXEC_WALL_MILLIS", 10000)),
+			DefaultMaxOutputByte: int(getEnvInt64("LMS_CODE_EXEC_MAX_OUTPUT_BYTES", 64<<10)),
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: origins,

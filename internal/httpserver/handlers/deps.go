@@ -7,6 +7,7 @@ import (
 
 	"growth-lms/internal/ai"
 	"growth-lms/internal/auth"
+	"growth-lms/internal/codeexec"
 	"growth-lms/internal/config"
 	"growth-lms/internal/media"
 	"growth-lms/internal/models"
@@ -98,4 +99,10 @@ type AuthDeps struct {
 	PodcastEpisodes  *models.PodcastEpisodeRepo
 	PodcastPlaylists *models.PodcastPlaylistRepo
 	PodcastProgress  *models.PodcastProgressRepo
+
+	// Task 9: sandboxed code execution.
+	CodeExec        *codeexec.Service
+	CodeExercises   *models.CodeExerciseRepo
+	CodeSubmissions *models.CodeSubmissionRepo
+	CodeExecUsage   *models.CodeExecUsageRepo
 }
